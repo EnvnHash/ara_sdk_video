@@ -1,0 +1,44 @@
+cmake_minimum_required(VERSION 3.12)
+
+set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_CXX_STANDARD 17)
+
+include(GeneralSettings)
+include(VisualStudioSettings)
+
+project(FFmpegEncode)
+
+include_directories(
+	${CMAKE_SOURCE_DIR}/Libraries/GLBase/src
+	${CMAKE_SOURCE_DIR}/Libraries/VideoInput/src
+	${CMAKE_SOURCE_DIR}/Libraries/Utilities/src
+	${ARA_SDK_SOURCE_DIR}/Libraries/third_party/nameof
+)
+
+#link_directories(${PROJECT_DESIGNER_DLL_DIR})
+
+set(SOURCES main.cpp)
+
+add_executable(${PROJECT_NAME} ${SOURCES})
+
+include(GLBaseDependencies)
+include(GLBaseCopyDependencies)
+include(Gtk3Include)
+include(PugiXMLInclude)
+include(UtilitiesDependencies)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
+
+if (WIN32)
+	target_link_libraries (${PROJECT_NAME} VideoInput GLSceneGraph GLBase Utilities Dwmapi.lib)
+else ()
+	target_link_libraries (${PROJECT_NAME} VideoInput GLSceneGraph GLBase Utilities)
+endif()
+
+if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
+	target_link_libraries(${PROJECT_NAME} resources)
+endif()
+
+INSTALL(TARGETS ${PROJECT_NAME}
+		DESTINATION ${CMAKE_CURRENT_BINARY_DIR} COMPONENT ${PROJECT_NAME} OPTIONAL)

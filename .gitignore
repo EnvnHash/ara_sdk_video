@@ -1,0 +1,4 @@
+/cmake-build-debug/
+/third_party/__checkout
+/third_party/NDI
+/third_party/ffmpeg
