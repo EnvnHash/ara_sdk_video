@@ -70,8 +70,7 @@ int FFMpegDecode::hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType
 }
 
 
-static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
-{
+static enum AVPixelFormat get_hw_format(AVCodecContext*, const enum AVPixelFormat *pix_fmts) {
     const enum AVPixelFormat *p;
     enum AVPixelFormat ret={AVPixelFormat(0)};
     bool gotFirst=false;
@@ -97,8 +96,7 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelF
 
 
 int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useNrThreads, int destWidth,
-                           int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart, std::function<void()> initCb)
-{
+                           int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart, const std::function<void()>& initCb) {
     m_resourcesAllocated = false;
     m_filePath = filePath;
     m_destWidth = destWidth;
@@ -211,10 +209,9 @@ int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useN
         });
         m_decodeThread.detach();
         return 1;
-    } else
+    } else {
         return setupStreams(nullptr, &m_format_opts, initCb);
-
-    return 1;
+    }
 }
 
 #ifdef __ANDROID__
@@ -381,36 +378,34 @@ int FFMpegDecode::openAsset(AAsset* assetDescriptor)
 }
 #endif
 
-int FFMpegDecode::read_packet_from_inbuf(void *opaque, uint8_t *buf, int buf_size)
-{
-    struct memin_buffer_data *bd = (struct memin_buffer_data*) opaque;
+int FFMpegDecode::read_packet_from_inbuf(void *opaque, uint8_t *buf, int buf_size) {
+    auto bd = (struct memin_buffer_data*) opaque;
     buf_size = std::min<int>(buf_size, (int)bd->size);
 
     // loop
-    if (!buf_size)
+    if (!buf_size) {
         bd->ptr = bd->start;
+    }
 
     // copy internal buffer data to buf
     memcpy(buf, bd->ptr, buf_size);
     bd->ptr  += buf_size;
     bd->size -= buf_size;
-
     return buf_size;
 }
 
-int FFMpegDecode::OpenCamera(GLBase *glbase, std::string camName, int _destWidth, int _destHeight, bool _decodeYuv420OnGpu)
-{
+int FFMpegDecode::OpenCamera(GLBase *glbase, const std::string& camName, int destWidth, int destHeight, bool decodeYuv420OnGpu) {
     m_resourcesAllocated = false;
 #ifdef _WIN32
     m_filePath = "video="+camName;
 #elif __linux__
-    m_filePath = std::move(camName);
+    m_filePath = camName;
 #endif
-    m_destWidth = _destWidth;
-    m_destHeight = _destHeight;
+    m_destWidth = destWidth;
+    m_destHeight = destHeight;
    // m_destPixFmt = AV_PIX_FMT_BGRA;
     m_destPixFmt = AV_PIX_FMT_BGR24;
-    m_decodeYuv420OnGpu = _decodeYuv420OnGpu;
+    m_decodeYuv420OnGpu = decodeYuv420OnGpu;
     m_useHwAccel = false;
     m_useNrThreads = 2;
     m_hasNoTimeStamp = true;
@@ -425,7 +420,6 @@ int FFMpegDecode::OpenCamera(GLBase *glbase, std::string camName, int _destWidth
 #endif
 
     av_log_set_level(AV_LOG_VERBOSE);
-    //av_log_set_level(AV_LOG_INFO);
     avdevice_register_all();
 
     av_log_set_callback( &ffmpeg::LogCallbackShim );	// custom logging
@@ -452,7 +446,7 @@ int FFMpegDecode::OpenCamera(GLBase *glbase, std::string camName, int _destWidth
     av_dict_set_int(&m_format_opts, "input_queue_size", 1, 0);
 
 #elif __linux__
-    AVInputFormat* camInputFormat = (AVInputFormat*) av_find_input_format("v4l2");
+    auto camInputFormat = (AVInputFormat*) av_find_input_format("v4l2");
     if (!camInputFormat)
         LOGE << "ERROR couldn't find input m_format dshow";
 #elif __APPLE__
@@ -464,29 +458,31 @@ int FFMpegDecode::OpenCamera(GLBase *glbase, std::string camName, int _destWidth
     return setupStreams(camInputFormat, &m_format_opts, nullptr);
 }
 
-int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, std::function<void()> initCb)
-{
-    int err, i, ret;
+int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, const std::function<void()>& initCb) {
+    int err, ret;
 
-    if (!m_formatContext)
+    if (!m_formatContext) {
         return 0;
+    }
 
-    if ((err = avformat_open_input(&m_formatContext, !m_filePath.empty() ? m_filePath.c_str() : nullptr, (AVInputFormat*)format, options) != 0)) {
+    if ((err = avformat_open_input(&m_formatContext, !m_filePath.empty() ? m_filePath.c_str() : nullptr, format, options) != 0)) {
         LOGE << "FFMpegDecode::setupStreams ERROR could not open the file " << m_filePath << " " << err2str(err);
         return 0;
     }
 
-    if (m_scan_all_pmts_set)
+    if (m_scan_all_pmts_set) {
         av_dict_set(&m_format_opts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE);
+    }
 
-    AVDictionaryEntry *t;
+    AVDictionaryEntry *t{};
     if ((t = av_dict_get(m_format_opts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
         LOGE << "Option " << t->key << " not found.";
         return 0;
     }
 
-    if (m_genpts)
+    if (m_genpts) {
         m_formatContext->flags |= AVFMT_FLAG_GENPTS;
+    }
 
     av_format_inject_global_side_data(m_formatContext);
 
@@ -497,78 +493,74 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
     // On return each dictionary will be filled with options that were not found.
 
     auto opts = setup_find_stream_info_opts(m_formatContext, m_codec_opts);
-    int orig_nb_streams = m_formatContext->nb_streams;
+    auto orig_nb_streams = static_cast<int32_t>(m_formatContext->nb_streams);
 
     err = avformat_find_stream_info(m_formatContext, opts);
 
-    for (i = 0; i < orig_nb_streams; i++)
+    for (auto i = 0; i < orig_nb_streams; ++i) {
         av_dict_free(&opts[i]);
+    }
     av_freep(&opts);
 
     if (err < 0) {
         LOG << m_filePath << " could not find codec parameters";
-        ret = -1;
         return 0;
     }
 
-    if (m_formatContext->pb)
+    if (m_formatContext->pb) {
         m_formatContext->pb->eof_reached = 0; // FIXME hack, ffplay maybe should not use avio_feof() to test for the end
+    }
 
-    if (m_seek_by_bytes < 0)
-        m_seek_by_bytes = !!(m_formatContext->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", m_formatContext->iformat->name);
-
-    double m_maxFrameDuration = (m_formatContext->iformat->flags & AVFMT_TS_DISCONT) ? 10.0 : 3600.0;
+    if (m_seek_by_bytes < 0) {
+        m_seek_by_bytes = !!(m_formatContext->iformat->flags & AVFMT_TS_DISCONT) && strcmp("ogg", m_formatContext->iformat->name) != 0;
+    }
 
     // if seeking requested, we execute it
-    if (!m_is_stream && m_start_time != AV_NOPTS_VALUE)
-    {
+    if (!m_is_stream && m_start_time != AV_NOPTS_VALUE) {
         int64_t timestamp = m_start_time;
         // add the stream start time
-        if (m_formatContext->start_time != AV_NOPTS_VALUE)
+        if (m_formatContext->start_time != AV_NOPTS_VALUE) {
             timestamp += m_formatContext->start_time;
+        }
         ret = avformat_seek_file(m_formatContext, -1, INT64_MIN, timestamp, INT64_MAX, 0);
         if (ret < 0) {
             LOG << m_filePath <<  ": could not seek to position " <<  (double)timestamp / AV_TIME_BASE;
         }
     }
 
-    if (!m_filePath.empty())
+    if (!m_filePath.empty()) {
         av_dump_format(m_formatContext, 0, m_filePath.c_str(), 0);
+    }
 
     // the component that knows how to enCOde and DECode the stream, it's the codec (audio or video) http://ffmpeg.org/doxygen/trunk/structAVCodec.html
-    m_video_codec = nullptr;
     m_video_stream_index = -1;
     m_audio_stream_index = -1;
 
     // loop though all the streams and print its main information
-    for (uint i = 0; i < m_formatContext->nb_streams; i++)
-    {
+    for (auto i = 0; i < m_formatContext->nb_streams; ++i) {
         auto pLocalCodecParameters = m_formatContext->streams[i]->codecpar;
         if (!pLocalCodecParameters) continue;
 
-        if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO && m_forceAudioCodec)
+        if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO && m_forceAudioCodec) {
             pLocalCodecParameters->codec_id = m_forceAudioCodec;
+        }
 
         // finds the registered decoder for a codec ID
         auto pLocalCodec = avcodec_find_decoder(pLocalCodecParameters->codec_id);
-        if (pLocalCodec)
-        {
-            if (pLocalCodec->pix_fmts && pLocalCodec->pix_fmts[0] != -1) 
-            {
+        if (pLocalCodec) {
+            if (pLocalCodec->pix_fmts && pLocalCodec->pix_fmts[0] != -1) {
                 int ind = 0;
-                while (pLocalCodec->pix_fmts[ind] != -1) 
-                {
+                while (pLocalCodec->pix_fmts[ind] != -1) {
                     LOG <<  "CODEC possible pix_fmts: " << pLocalCodec->pix_fmts[ind];
-                    ind++;
+                    ++ind;
                 }
             }
         }
 
         // when the stream is a video we store its index, codec parameters and codec
-        if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO)
-        {
+        if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
             m_video_stream_index = i;
-            m_video_nr_tracks++;
+            ++m_video_nr_tracks;
 
             m_video_codec_ctx = avcodec_alloc_context3(nullptr);
             if (!m_video_codec_ctx) {
@@ -576,9 +568,10 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
                 return 0;
             }
 
-            // set number of threads here
-            if (!m_useHwAccel)
+            // set the number of threads here
+            if (!m_useHwAccel) {
                 m_video_codec_ctx->thread_count = m_useNrThreads;
+            }
 
             // Fill the codec context based on the values from the supplied codec parameters
             if (avcodec_parameters_to_context(m_video_codec_ctx, pLocalCodecParameters) < 0) {
@@ -586,39 +579,37 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
                 return 0;
             }
 
-            m_video_codec = (AVCodec*)avcodec_find_decoder(m_video_codec_ctx->codec_id);
+            auto video_codec = avcodec_find_decoder(m_video_codec_ctx->codec_id);
 
             // optionally forcing a specific codec type
-            if (m_video_codec_name)
-            {
-                m_video_codec = (AVCodec*)avcodec_find_decoder_by_name(m_video_codec_name);
+            if (m_video_codec_name) {
+                video_codec = (AVCodec *) avcodec_find_decoder_by_name(m_video_codec_name);
                 avcodec_free_context(&m_video_codec_ctx);
-                m_video_codec_ctx = avcodec_alloc_context3(m_video_codec);
+                m_video_codec_ctx = avcodec_alloc_context3(video_codec);
             }
 
-            if (!m_video_codec)
-            {
-                if (m_video_codec_name)
+            if (!video_codec) {
+                if (m_video_codec_name) {
                     LOG << "No codec could be found with name " << m_video_codec_name;
-                else
+                } else {
                     LOG << "No decoder could be found for codec " << avcodec_get_name(m_video_codec_ctx->codec_id);
+                }
 
                 ret = AVERROR(EINVAL);
                 return -1;
             }
 
             m_video_codec_ctx->pkt_timebase = m_formatContext->streams[i]->time_base;
-            m_video_codec_ctx->codec_id = m_video_codec->id;
+            m_video_codec_ctx->codec_id = video_codec->id;
 
-            AVDictionary* opts = nullptr;
+            AVDictionary *vopts = nullptr;
 
-            if (!av_dict_get(opts, "threads", nullptr, 0))
-                av_dict_set(&opts, "threads", "auto", 0);
+            if (!av_dict_get(vopts, "threads", nullptr, 0))
+                av_dict_set(&vopts, "threads", "auto", 0);
 
-            //av_dict_set(&opts, "refcounted_frames", "1", 0);
+            //av_dict_set(&vopts, "refcounted_frames", "1", 0);
 
-            if (m_useHwAccel && !m_useMediaCodec)
-            {
+            if (m_useHwAccel && !m_useMediaCodec) {
                 m_video_codec_ctx->get_format = get_hw_format;
                 av_opt_set_int(m_video_codec_ctx, "refcounted_frames", 1, 0);    // what does this do?
 
@@ -645,20 +636,29 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
             //LOG << "m_bitCount " << m_bitCount;
             //LOG << "";
 
-            m_timeBaseDiv = (double) m_formatContext->streams[i]->time_base.num / (double) m_formatContext->streams[i]->time_base.den;
+            m_timeBaseDiv = static_cast<double>(m_formatContext->streams[i]->time_base.num) /
+                            static_cast<double>(m_formatContext->streams[i]->time_base.den);
 
-            if (m_formatContext->streams[i]->r_frame_rate.num)
-                m_frameDur = (double) m_formatContext->streams[i]->r_frame_rate.den / (double) m_formatContext->streams[i]->r_frame_rate.num;
-            else
+            if (m_formatContext->streams[i]->r_frame_rate.num) {
+                m_frameDur = static_cast<double>(m_formatContext->streams[i]->r_frame_rate.den) /
+                             static_cast<double>(m_formatContext->streams[i]->r_frame_rate.num);
+            } else {
                 m_frameDur = 0.0;
+            }
 
-            m_fps = (int)((double)m_formatContext->streams[i]->r_frame_rate.num / (double)m_formatContext->streams[i]->r_frame_rate.den);
+            m_fps = static_cast<int32_t>((static_cast<double>(m_formatContext->streams[i]->r_frame_rate.num) /
+                                          static_cast<double>(m_formatContext->streams[i]->r_frame_rate.den)));
 
-            if (m_decodeYuv420OnGpu || !m_destWidth) m_destWidth = m_srcWidth;
-            if (m_decodeYuv420OnGpu || !m_destHeight) m_destHeight = m_srcHeight;
+            if (m_decodeYuv420OnGpu || !m_destWidth) {
+                m_destWidth = m_srcWidth;
+            }
+
+            if (m_decodeYuv420OnGpu || !m_destHeight) {
+                m_destHeight = m_srcHeight;
+            }
 
             // Initialize the AVCodecContext to use the given AVCodec.
-            if ((ret = avcodec_open2(m_video_codec_ctx, m_video_codec, &opts)) < 0) {
+            if ((ret = avcodec_open2(m_video_codec_ctx, video_codec, reinterpret_cast<AVDictionary **>(&opts))) < 0) {
 #ifdef __linux__
                 LOGE << "failed to open video codec through avcodec_open2 " << av_make_error_string(ret);
 #endif
@@ -681,19 +681,18 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
             }
 #endif
 
-            AVDictionaryEntry* t = nullptr;
-            if ((t = av_dict_get(opts, "", nullptr, AV_DICT_IGNORE_SUFFIX)))
-            {
-                LOGE << "Option " << t->key << "not found";
+            AVDictionaryEntry* dictEntr = nullptr;
+            if ((dictEntr = av_dict_get(vopts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
+                LOGE << "Option " << dictEntr->key << "not found";
             }
-        }
-        else if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO)
-        {
-            if (m_forceSampleRate != 0)
+        } else if (pLocalCodecParameters->codec_type == AVMEDIA_TYPE_AUDIO) {
+            if (m_forceSampleRate != 0) {
                 pLocalCodecParameters->sample_rate = m_forceSampleRate;
+            }
 
-            if (m_forceNrChannels != 0)
+            if (m_forceNrChannels != 0) {
                 pLocalCodecParameters->channels = m_forceNrChannels;
+            }
 
             // TODO : there is a problem with 5.1, AAC which is detected as 1 channel
             m_audio_nr_channels = pLocalCodecParameters->channels;
@@ -721,25 +720,23 @@ int FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** optio
         }
     }
 
-    if (initCb)
+    if (initCb) {
         initCb();
+    }
 
     return 1;
 }
 
-int FFMpegDecode::allocateResources()
-{
+int FFMpegDecode::allocateResources() {
     m_packet = av_packet_alloc();
     if (!m_packet) {
         LOGE << "failed to allocated memory for AVPacket";
         return 0;
     }
 
-    if (m_destWidth && m_destHeight)
-    {
+    if (m_destWidth && m_destHeight) {
         m_framePtr = std::vector<AVFrame*>(m_videoFrameBufferSize);
-        for (auto &it : m_framePtr)
-        {
+        for (auto &it : m_framePtr) {
             it = av_frame_alloc();
             it->width = m_destWidth;
             it->height = m_destHeight;
@@ -754,11 +751,9 @@ int FFMpegDecode::allocateResources()
     m_frame = av_frame_alloc();
     m_audioFrame = av_frame_alloc();
 
-    if (m_video_codec_ctx)
-    {
+    if (m_video_codec_ctx) {
 #ifdef ARA_USE_GLBASE
-        if (!m_decodeYuv420OnGpu && m_destWidth && m_destHeight)
-        {
+        if (!m_decodeYuv420OnGpu && m_destWidth && m_destHeight) {
             m_buffer = std::vector<std::vector<uint8_t>>(m_videoFrameBufferSize);
             m_bgraFrame = std::vector<AVFrame*>(m_videoFrameBufferSize);
             for (uint32_t i = 0; i < m_videoFrameBufferSize; i++)
@@ -766,8 +761,7 @@ int FFMpegDecode::allocateResources()
         }
 
         // destFmt BGRA
-        if (m_usePbos)
-        {
+        if (m_usePbos) {
             m_pbos = std::vector<GLuint>(m_nrPboBufs);
             std::fill(m_pbos.begin(), m_pbos.end(), 0);
         }
@@ -783,21 +777,19 @@ int FFMpegDecode::allocateResources()
     return 1;
 }
 
-AVDictionary** FFMpegDecode::setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts)
-{
-    AVDictionary **opts;
-
-    if (!s->nb_streams)
-        return nullptr;
-
-    //opts = (AVDictionary**) av_mallocz_array(s->nb_streams, sizeof(*opts));
-    opts = (AVDictionary**) av_calloc(s->nb_streams, sizeof(*opts));
-    if (!opts) {
-        LOGE<< "Could not alloc memory for stream options.";
+AVDictionary** FFMpegDecode::setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts) {
+    if (!s->nb_streams) {
         return nullptr;
     }
 
-    for (unsigned int i = 0; i < s->nb_streams; i++){
+    AVDictionary **opts{};
+    opts = (AVDictionary**) av_calloc(s->nb_streams, sizeof(*opts));
+    if (!opts) {
+        LOGE << "Could not alloc memory for stream options.";
+        return nullptr;
+    }
+
+    for (unsigned int i = 0; i < s->nb_streams; i++) {
         if (!s->streams[i]->codecpar){
             LOGE << "FFMpegDecode::setup_find_stream_info_opts Error streams[i]->codecpar == null";
             continue;
@@ -805,12 +797,11 @@ AVDictionary** FFMpegDecode::setup_find_stream_info_opts(AVFormatContext *s, AVD
         opts[i] = filter_codec_opts(codec_opts, s->streams[i]->codecpar->codec_id, s, s->streams[i], nullptr);
     }
 
-
     return opts;
 }
 
-AVDictionary* FFMpegDecode::filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec)
-{
+AVDictionary* FFMpegDecode::filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s,
+                                              AVStream *st, AVCodec *codec) {
     AVDictionary    *ret = nullptr;
     AVDictionaryEntry *t = nullptr;
     int            flags = s->oformat ? AV_OPT_FLAG_ENCODING_PARAM
@@ -818,9 +809,9 @@ AVDictionary* FFMpegDecode::filter_codec_opts(AVDictionary *opts, enum AVCodecID
     char          prefix = 0;
     const AVClass    *cc = avcodec_get_class();
 
-    if (!codec)
-        codec            = (AVCodec*)(s->oformat ? avcodec_find_encoder(codec_id)
-                                                    : avcodec_find_decoder(codec_id));
+    if (!codec) {
+        codec = (AVCodec*)(s->oformat ? avcodec_find_encoder(codec_id) : avcodec_find_decoder(codec_id));
+    }
 
     switch (st->codecpar->codec_type) {
         case AVMEDIA_TYPE_VIDEO:
@@ -839,49 +830,44 @@ AVDictionary* FFMpegDecode::filter_codec_opts(AVDictionary *opts, enum AVCodecID
             break;
     }
 
-    while ((t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX)))
-    {
+    while ((t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX))) {
         char *p = strchr(t->key, ':');
 
         // check stream specification in m_opt name
-        if (p)
+        if (p) {
             switch (check_stream_specifier(s, st, p + 1)) {
                 case  1: *p = 0; break;
                 case  0:         continue;
                 default:         break;
             }
+        }
 
-        if (av_opt_find(&cc, t->key, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ) ||
-            !codec ||
-            (codec->priv_class &&
-             av_opt_find(&codec->priv_class, t->key, nullptr, flags,
-                         AV_OPT_SEARCH_FAKE_OBJ)))
+        if (av_opt_find(&cc, t->key, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ) || !codec ||
+            (codec->priv_class && av_opt_find(&codec->priv_class, t->key, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ))) {
             av_dict_set(&ret, t->key, t->value, 0);
-        else if (t->key[0] == prefix &&
-                 av_opt_find(&cc, t->key + 1, nullptr, flags,
-                             AV_OPT_SEARCH_FAKE_OBJ))
+        } else if (t->key[0] == prefix && av_opt_find(&cc, t->key + 1, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ)) {
             av_dict_set(&ret, t->key + 1, t->value, 0);
+        }
 
-        if (p)
+        if (p) {
             *p = ':';
+        }
     }
     return ret;
 }
 
-int FFMpegDecode::check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec)
-{
+int FFMpegDecode::check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec) {
     int ret = avformat_match_stream_specifier(s, st, spec);
-    if (ret < 0)
+    if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
+    }
     return ret;
 }
 
 #ifdef ARA_USE_GLBASE
-void FFMpegDecode::initShader(AVPixelFormat _srcPixFmt)
-{
-    if (m_decodeYuv420OnGpu && !m_shCol->hasShader("FFMpegDecode_yuv"))
-    {
-        std::string shdr_Header = m_shCol->getShaderHeader();
+void FFMpegDecode::initShader(AVPixelFormat srcPixFmt) {
+    if (m_decodeYuv420OnGpu && !m_shCol->hasShader("FFMpegDecode_yuv")) {
+        auto shdr_Header = ara::ShaderCollector::getShaderHeader();
 
         std::string vert = STRINGIFY( layout(location = 0) in vec4 position; \n
             layout(location = 2) in vec2 texCoord; \n
@@ -912,7 +898,7 @@ void FFMpegDecode::initShader(AVPixelFormat _srcPixFmt)
         void main() { \n);
 
         // NV12
-        if (_srcPixFmt == AV_PIX_FMT_NV12)
+        if (srcPixFmt == AV_PIX_FMT_NV12) {
             frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
                                       float u = texture(u_tex_unit, tex_coord).r - 0.5; \n
                                       float v = texture(u_tex_unit, tex_coord).g - 0.5; \n
@@ -924,19 +910,19 @@ void FFMpegDecode::initShader(AVPixelFormat _srcPixFmt)
                                       - 0.05) * 1.07, \n
                                       alpha); \n
             );
-        else if (_srcPixFmt == AV_PIX_FMT_NV21)
+        } else if (srcPixFmt == AV_PIX_FMT_NV21) {
             frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
-                float u = texture(u_tex_unit, tex_coord).g - 0.5; \n
-                float v = texture(u_tex_unit, tex_coord).r - 0.5; \n
+                                      float u = texture(u_tex_unit, tex_coord).g - 0.5; \n
+                                      float v = texture(u_tex_unit, tex_coord).r - 0.5; \n
 
-                fragColor = vec4(
-                    (vec3(y + 1.4021 * v, \n
-                            y - 0.34482 * u - 0.71405 * v, \n
-                            y + 1.7713 * u)
-                        - 0.05) * 1.07, \n
-                    alpha); \n
+                                      fragColor = vec4(
+                              (vec3(y + 1.4021 * v, \n
+                                      y - 0.34482 * u - 0.71405 * v, \n
+                                      y + 1.7713 * u)
+                                      - 0.05) * 1.07, \n
+                                      alpha); \n
             );
-        else
+        } else {
             // YUV420P
             frag += STRINGIFY(
                     float y = texture(tex_unit, tex_coord).r; \n
@@ -948,27 +934,23 @@ void FFMpegDecode::initShader(AVPixelFormat _srcPixFmt)
                     float b = y + 1.772 * u; \n
 
                     fragColor = vec4(vec3(r, g, b), alpha); \n);
+        }
 
         frag += "}";
         frag = shdr_Header + "// YUV420 fragment shader\n"  + frag;
-
         m_shader = m_shCol->add("FFMpegDecode_yuv", vert, frag);
-
     } else {
         m_shader = m_shCol->getStdTexAlpha();
     }
 }
 
-void FFMpegDecode::shaderBegin()
-{
-    if (m_run && m_shader && !m_textures.empty())
-    {
+void FFMpegDecode::shaderBegin() {
+    if (m_run && m_shader && !m_textures.empty()) {
         m_shader->begin();
         m_shader->setIdentMatrix4fv("m_pvm");
         m_shader->setUniform1f("alpha", 1.f); // y
 
-        if (m_decodeYuv420OnGpu)
-        {
+        if (m_decodeYuv420OnGpu) {
             m_shader->setUniform1i("tex_unit", 0); // y
             m_shader->setUniform1i("u_tex_unit", 1); // u
             m_shader->setUniform1i("v_tex_unit", 2); // v
@@ -987,41 +969,38 @@ void FFMpegDecode::shaderBegin()
             }
         } else {
             m_shader->setUniform1i("tex", 0); // y
-
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId()); // y
         }
     }
 }
 
-void FFMpegDecode::shaderEnd()
-{
-    if (m_run && m_shader && m_decodeYuv420OnGpu)
-        m_shader->end();
+void FFMpegDecode::shaderEnd() const {
+    if (m_run && m_decodeYuv420OnGpu) {
+        ara::Shaders::end();
+    }
 }
 #endif
 
-void FFMpegDecode::start(double time)
-{
+void FFMpegDecode::start(double time) {
     allocateResources();
-
     m_run = true;
     m_decodeThread = std::thread([&]{ singleThreadDecodeLoop();});
     m_decodeThread.detach();
 }
 
-void FFMpegDecode::stop()
-{
+void FFMpegDecode::stop() {
     m_run = false;
     m_decodeCond.notify();     // unlock waits
     bool unlock = m_mutex.try_lock();
     m_endThreadCond.wait(0);
     clearResources();
-    if (unlock) m_mutex.unlock();
+    if (unlock) {
+        m_mutex.unlock();
+    }
 }
 
-void FFMpegDecode::alloc_gl_res(AVPixelFormat srcPixFmt)
-{
+void FFMpegDecode::alloc_gl_res(AVPixelFormat srcPixFmt) {
 #ifdef ARA_USE_GLBASE
     initShader(srcPixFmt);
 
@@ -1032,8 +1011,9 @@ void FFMpegDecode::alloc_gl_res(AVPixelFormat srcPixFmt)
     }
 
     m_textures = std::vector<std::unique_ptr<Texture>>(m_nrTexBuffers);
-    for (auto &it : m_textures)
+    for (auto &it : m_textures) {
         it = make_unique<Texture>(m_glbase);
+    }
 
     if (m_decodeYuv420OnGpu) {
         if (m_srcPixFmt == AV_PIX_FMT_NV12 || m_srcPixFmt == AV_PIX_FMT_NV21) {
@@ -1050,10 +1030,11 @@ void FFMpegDecode::alloc_gl_res(AVPixelFormat srcPixFmt)
 #endif
 }
 
-AVFrame* FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, vector<vector<uint8_t>>::iterator it)
-{
+AVFrame* FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, vector<vector<uint8_t>>::iterator it) {
     auto picture = av_frame_alloc();
-    if (!picture) return nullptr;
+    if (!picture) {
+        return nullptr;
+    }
 
     picture->format = pix_fmt;
     picture->width = width;
@@ -1065,7 +1046,6 @@ AVFrame* FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int 
 
     // Assign appropriate parts of buffer to image planes in m_inpFrame
     av_image_fill_arrays(picture->data, picture->linesize, &(*it)[0], pix_fmt, width, height, 1);
-
     return picture;
 }
 
@@ -1095,7 +1075,7 @@ bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format)
         m_audio_codec_ctx->channel_layout = av_get_default_channel_layout( m_audio_codec_ctx->channels );
 
     // set options
-    av_opt_set_int(m_audio_swr_ctx, "in_channel_layout",    m_audio_codec_ctx->channel_layout, 0);
+    av_opt_set_int(m_audio_swr_ctx, "in_channel_layout",    static_cast<int64_t>(m_audio_codec_ctx->channel_layout), 0);
     av_opt_set_int(m_audio_swr_ctx, "in_sample_rate",       m_audio_codec_ctx->sample_rate, 0);
     av_opt_set_sample_fmt(m_audio_swr_ctx, "in_sample_fmt", m_audio_codec_ctx->sample_fmt, 0);
 
@@ -1117,13 +1097,16 @@ void FFMpegDecode::singleThreadDecodeLoop() {
     while (m_run) {
         if (m_formatContext && m_packet && !m_pause) {
             // in case the queue is filled, don't read more frames
-            if ((m_video_stream_index > -1 && (int)m_nrBufferedFrames >= (int)m_videoFrameBufferSize) || m_audioQueueFull) {
+            if ((m_video_stream_index > -1
+                && static_cast<int32_t>(m_nrBufferedFrames) >= static_cast<int32_t>(m_videoFrameBufferSize))
+                || m_audioQueueFull) {
                 this_thread::sleep_for(500us);
                 continue;
             }
 
-            if (av_read_frame(m_formatContext, m_packet) < 0)
+            if (av_read_frame(m_formatContext, m_packet) < 0) {
                 continue;
+            }
 
             // if it's the video stream and the m_buffer queue is not filled
             if (m_packet->stream_index == m_video_stream_index) {
@@ -1131,20 +1114,19 @@ void FFMpegDecode::singleThreadDecodeLoop() {
                 // in a continuous order!!!!!!
                 m_actFrameNr = (uint) ((double) m_packet->pts * m_timeBaseDiv / m_frameDur);
 
-                if ((m_totNumFrames - 1) == m_actFrameNr)
-                    if (m_loop && !m_is_stream)
-                        av_seek_frame(m_formatContext, m_video_stream_index, 0, AVSEEK_FLAG_BACKWARD);
+                if ((m_totNumFrames - 1) == m_actFrameNr && m_loop && !m_is_stream) {
+                    av_seek_frame(m_formatContext, m_video_stream_index, 0, AVSEEK_FLAG_BACKWARD);
+                }
 
-                if (decode_video_packet(m_packet, m_video_codec_ctx) < 0)
+                if (decode_video_packet(m_packet, m_video_codec_ctx) < 0) {
                     continue;
-
-            } else if (m_packet->stream_index == m_audio_stream_index) {
-                if (decode_audio_packet(m_packet, m_audio_codec_ctx) < 0)
-                    continue;
+                }
+            } else if (m_packet->stream_index == m_audio_stream_index
+                       && decode_audio_packet(m_packet, m_audio_codec_ctx) < 0) {
+                continue;
             }
 
             av_packet_unref(m_packet);
-
         } else {
             this_thread::sleep_for(1000us);
         }
@@ -1153,26 +1135,27 @@ void FFMpegDecode::singleThreadDecodeLoop() {
     m_endThreadCond.notify();	 // wait until the packet was needed
 }
 
-int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecContext)
-{
-    if (!codecContext) return 0;
+int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecContext) {
+    if (!codecContext) {
+        return 0;
+    }
 
     int response = -1;
 
     if (!m_useMediaCodec){
         response = avcodec_send_packet(codecContext, packet);
-        if (response < 0) return response;
+        if (response < 0) {
+            return response;
+        }
     } else {
 #ifdef __ANDROID__
         response = mediaCodecGetInputBuffer(packet);
 #endif
     }
 
-    while (m_run && response >= 0)
-    {
-        if (m_run)
-        {
-            if (!m_useMediaCodec && m_useHwAccel){
+    while (m_run && response >= 0) {
+        if (m_run) {
+            if (!m_useMediaCodec && m_useHwAccel) {
                 response = avcodec_receive_frame(codecContext, m_frame);            // always calls av_frame_unref
             } else if (m_useMediaCodec && m_useHwAccel){
 #ifdef __ANDROID__
@@ -1193,26 +1176,22 @@ int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecCon
             }
 
             // we got a valid packet!!
-            if (m_run && response >= 0)
-            {
-                if (!m_decodeYuv420OnGpu)
-                {
+            if (m_run && response >= 0) {
+                if (!m_decodeYuv420OnGpu) {
                     m_mutex.lock();
 
                     // convert frame to desired size and m_format
-                    if (m_useHwAccel && !m_useMediaCodec && m_frame->format == m_hwPixFmt)
-                    {
+                    if (m_useHwAccel && !m_useMediaCodec && m_frame->format == m_hwPixFmt) {
                         // retrieve data from GPU to CPU, dst m_frame must be "clean"
-                        if (av_hwframe_transfer_data(m_framePtr[m_decFramePtr], m_frame, 0) < 0)
+                        if (av_hwframe_transfer_data(m_framePtr[m_decFramePtr], m_frame, 0) < 0) {
                             LOGE << "Error transferring the data to system memory";
+                        }
 
                         m_framePtr[m_decFramePtr]->pts = m_frame->pts;
                         m_framePtr[m_decFramePtr]->pkt_size = m_frame->pkt_size;
                         m_framePtr[m_decFramePtr]->coded_picture_number = m_frame->coded_picture_number;
                         m_framePtr[m_decFramePtr]->pict_type = m_frame->pict_type;
-                    }
-                    else if (m_useHwAccel && m_useMediaCodec)
-                    {
+                    } else if (m_useHwAccel && m_useMediaCodec) {
 #ifdef __ANDROID__
                         size_t hwBufSize;
                         auto buffer = mediaCodecGetOutputBuffer(response, hwBufSize);
@@ -1233,39 +1212,39 @@ int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecCon
 
                     // since now for the first time we are really sure about the pix_fmt the decode
                     // frame will have, initialize the textures and the swscale context if necessary
-                    if (!m_img_convert_ctx && !m_decodeYuv420OnGpu)
+                    if (!m_img_convert_ctx && !m_decodeYuv420OnGpu) {
                         m_img_convert_ctx = sws_getCachedContext(m_img_convert_ctx,
                                                                  codecContext->width, codecContext->height,
                                                                  (AVPixelFormat) m_framePtr[m_decFramePtr]->format,
                                                                  m_destWidth, m_destHeight, m_destPixFmt,
                                                                  SWS_FAST_BILINEAR, //SWS_BICUBIC,
                                                                  nullptr, nullptr, nullptr);
+                    }
 
                     response = sws_scale(m_img_convert_ctx,
                                          m_framePtr[m_decFramePtr]->data, m_framePtr[m_decFramePtr]->linesize, 0,
                                          codecContext->height,
                                          m_bgraFrame[m_decFramePtr]->data, m_bgraFrame[m_decFramePtr]->linesize);
 
-                    if (m_decodeCb)
+                    if (m_decodeCb) {
                         m_decodeCb(m_bgraFrame[m_decFramePtr]->data[0]);
+                    }
 
-                    if (response < 0)
-                        LOGE <<  "FFMpegDecode ERROR, sws_scale failed!!!";
+                    if (response < 0) {
+                        LOGE << "FFMpegDecode ERROR, sws_scale failed!!!";
+                    }
 
                     m_mutex.unlock();
-                } else
-                {
-                    if (m_useHwAccel && !m_useMediaCodec && (m_frame->format > -1) && (m_frame->format == m_hwPixFmt))
-                    {
+                } else {
+                    if (m_useHwAccel && !m_useMediaCodec && (m_frame->format > -1) && (m_frame->format == m_hwPixFmt)) {
                         m_mutex.lock();
 
-                        AVHWFramesContext *ctx = (AVHWFramesContext *) m_frame->hw_frames_ctx->data;
-
                         // retrieve data from GPU to CPU, dst frame must be "clean"
-                        if (av_hwframe_transfer_data(m_framePtr[m_decFramePtr], m_frame, 0) < 0)
+                        if (av_hwframe_transfer_data(m_framePtr[m_decFramePtr], m_frame, 0) < 0) {
                             LOGE << "Error transferring the data to system memory";
+                        }
 
-                        // not all parameters are copied so, do this manually
+                        // not all parameters are copied, so, do this manually
                         m_framePtr[m_decFramePtr]->pts = m_frame->pts;
                         m_framePtr[m_decFramePtr]->pkt_size = m_frame->pkt_size;
                         m_framePtr[m_decFramePtr]->coded_picture_number = m_frame->coded_picture_number;
@@ -1274,8 +1253,7 @@ int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecCon
                         m_srcPixFmt = (AVPixelFormat) m_framePtr[m_decFramePtr]->format;
                         m_mutex.unlock();
 
-                    } else if(m_useHwAccel && m_useMediaCodec)
-                    {
+                    } else if(m_useHwAccel && m_useMediaCodec) {
 #ifdef __ANDROID__
                         m_mutex.lock();
 
@@ -1300,35 +1278,39 @@ int FFMpegDecode::decode_video_packet(AVPacket* packet, AVCodecContext* codecCon
                     }
                 }
 
-                if (m_videoCb)
+                if (m_videoCb) {
                     m_videoCb(m_framePtr[m_decFramePtr]);
+                }
 
                 m_mutex.lock();
 
                 m_ptss[m_decFramePtr] = m_timeBaseDiv * (double) m_framePtr[m_decFramePtr]->pts;
 
                 // the stream might start with a pts different from 0, for this reason here register explicitly the starting pts
-                if (m_nrBufferedFrames == 0)
-                    m_videoStartPts = (m_useHwAccel && !m_useMediaCodec) ? m_frame->pts : m_framePtr[m_decFramePtr]->pts;
+                if (m_nrBufferedFrames == 0) {
+                    m_videoStartPts = (m_useHwAccel && !m_useMediaCodec) ? m_frame->pts
+                                                                         : m_framePtr[m_decFramePtr]->pts;
+                }
 
                 // call end callback if we are done
-                if (m_endCb && m_ptss[m_decFramePtr] < m_lastPtss && m_lastPtss > 0) m_endCb();
+                if (m_endCb && m_ptss[m_decFramePtr] < m_lastPtss && m_lastPtss > 0) {
+                    m_endCb();
+                }
 
                 m_lastPtss = m_ptss[m_decFramePtr];
 
-                if (!m_gotFirstVideoFrame)
-                {
+                if (!m_gotFirstVideoFrame) {
                     m_gotFirstVideoFrame = true;
-                    if (m_firstVideoFrameCb) m_firstVideoFrameCb();
+                    if (m_firstVideoFrameCb) {
+                        m_firstVideoFrameCb();
+                    }
                 }
 
                 m_nrBufferedFrames++;
                 //LOG <<  "++ " << m_nrBufferedFrames;
 
                 m_decFramePtr = ++m_decFramePtr % m_videoFrameBufferSize;
-
                 m_mutex.unlock();
-
                 response = -1; // break loop
             }
         }
@@ -1402,16 +1384,14 @@ void FFMpegDecode::mediaCodecReleaseOutputBuffer(int status)
 }
 #endif
 
-int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecContext)
-{
+int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecContext) {
     // Supply raw packet data as input to a decoder
     int response = avcodec_send_packet(codecContext, packet);
-
-    if (response < 0)
+    if (response < 0) {
         return response;
+    }
 
-    while (m_run && response >= 0)
-    {
+    while (m_run && response >= 0) {
         response = avcodec_receive_frame(codecContext, m_audioFrame);            // always calls av_frame_unref
 
         if (response == AVERROR(EAGAIN)) {
@@ -1424,21 +1404,19 @@ int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecCon
         }
 
         // we got a valid packet!!
-        if (m_run && response >= 0)
-        {
+        if (m_run && response >= 0) {
             int data_size = av_samples_get_buffer_size(nullptr, codecContext->channels,
                                                        m_audioFrame->nb_samples,
                                                        codecContext->sample_fmt, 1);
 
             // mp3 codec needs some m_frame to have valid data
-            if (m_audio_codec_ctx->codec_id == AV_CODEC_ID_MP3)
-                if (data_size < 4096) continue;
+            if (m_audio_codec_ctx->codec_id == AV_CODEC_ID_MP3 && data_size < 4096) {
+                continue;
+            }
 
-            if (m_useAudioConversion)
-            {
+            if (m_useAudioConversion) {
                 // init the destination buffer if necessary
-                if (!m_dst_sampleBuffer)
-                {
+                if (!m_dst_sampleBuffer) {
                     m_max_dst_nb_samples = m_dst_nb_samples = (int) av_rescale_rnd(m_audioFrame->nb_samples, m_dstSampleRate,
                             m_audio_codec_ctx->sample_rate, AV_ROUND_UP);
 
@@ -1447,15 +1425,14 @@ int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecCon
                     response = av_samples_alloc_array_and_samples((uint8_t***)&m_dst_sampleBuffer, &m_dst_audio_linesize,
                                                                   m_dst_audio_nb_channels, m_dst_nb_samples, m_dst_sample_fmt, 0);
 
-                    if (response < 0)
-                    {
+                    if (response < 0) {
                         LOGE << "ERROR: could not allocate destination sample buffer";
                         break;
                     }
                 }
 
                 // convert to destination m_format
-                response = swr_convert(m_audio_swr_ctx, (uint8_t**)m_dst_sampleBuffer, m_dst_nb_samples,
+                response = swr_convert(m_audio_swr_ctx, m_dst_sampleBuffer, m_dst_nb_samples,
                         (const uint8_t**)m_audioFrame->data, m_audioFrame->nb_samples);
 
                 if (response < 0) {
@@ -1470,13 +1447,11 @@ int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecCon
                 m_audioCbData.sampleRate = m_dstSampleRate;
                 m_audioCbData.sampleFmt = m_dst_sample_fmt;
 
-                if (m_audioCb)
+                if (m_audioCb) {
                     m_audioCb(m_audioCbData);
-
-            } else
-            {
-                if (!m_dst_sampleBuffer)
-                {
+                }
+            } else {
+                if (!m_dst_sampleBuffer) {
                     // buffer is going to be directly written to a raw audio, no alignment
                     response = av_samples_alloc_array_and_samples((uint8_t***)&m_dst_sampleBuffer, &m_audioFrame->linesize[0],
                                                                   m_audioFrame->channels, m_audioFrame->nb_samples,
@@ -1487,45 +1462,44 @@ int FFMpegDecode::decode_audio_packet(AVPacket *packet, AVCodecContext *codecCon
                     }
                 }
 
-                if (m_audioCb)
+                if (m_audioCb) {
                     m_audioCb(m_audioCbData);
+                }
             }
 
-            if (!m_gotFirstAudioFrame)
-            {
+            if (!m_gotFirstAudioFrame) {
                 m_gotFirstAudioFrame = true;
-                if (m_firstAudioFrameCb) m_firstAudioFrameCb();
+                if (m_firstAudioFrameCb) {
+                    m_firstAudioFrameCb();
+                }
             }
 
-            if (response < 0)
+            if (response < 0) {
                 LOGE << "FFMpegDecode ERROR, sws_scale failed!!!";
+            }
         }
     }
 
     return 0;
 }
 
-uint8_t* FFMpegDecode::reqNextBuf()
-{
+uint8_t* FFMpegDecode::reqNextBuf() {
     uint8_t* buf=nullptr;
 
-    if (m_resourcesAllocated && m_run && m_nrBufferedFrames >= 1)
-    {
+    if (m_resourcesAllocated && m_run && m_nrBufferedFrames >= 1) {
         ++m_frameToUpload %= m_videoFrameBufferSize;
 
         if (m_frameToUpload > -1
             && m_bgraFrame[m_frameToUpload]->width
             && m_bgraFrame[m_frameToUpload]->height
-            && m_bgraFrame[m_frameToUpload]->data[0])
-        {
+            && m_bgraFrame[m_frameToUpload]->data[0]) {
             buf = m_bgraFrame[m_frameToUpload]->data[0];
 
             // mark as consumed
             m_framePtr[m_frameToUpload]->pts = -1;
 
-            if (m_nrBufferedFrames > 0)
-            {
-                m_nrBufferedFrames--;
+            if (m_nrBufferedFrames > 0) {
+                --m_nrBufferedFrames;
             }
 
             m_decodeCond.notify();     // wait until the packet was needed
@@ -1536,31 +1510,26 @@ uint8_t* FFMpegDecode::reqNextBuf()
 }
 
 #ifdef ARA_USE_GLBASE
-void FFMpegDecode::loadFrameToTexture(double time)
-{
-    if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1)
-    {
+void FFMpegDecode::loadFrameToTexture(double time) {
+    if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1) {
         double actRelTime = time - m_startTime + ((double)m_videoStartPts * m_timeBaseDiv);
         uint searchInd = (m_frameToUpload +1) % m_videoFrameBufferSize;
         bool uploadNewFrame = false;
 
-        if (!m_gl_res_inited && m_srcWidth && m_srcHeight)
-        {
+        if (!m_gl_res_inited && m_srcWidth && m_srcHeight) {
             alloc_gl_res(m_srcPixFmt);
             m_gl_res_inited = true;
         }
 
-        if (!m_gl_res_inited) return;
+        if (!m_gl_res_inited) {
+            return;
+        }
 
         // check for the first frame or a frame with a pts close to the actual time
-        if (!m_hasNoTimeStamp)
-        {
-            while (searchInd < (uint) m_videoFrameBufferSize)
-            {
-                if (!m_firstFramePresented)
-                {
-                    if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_is_stream)
-                    {
+        if (!m_hasNoTimeStamp) {
+            while (searchInd < (uint) m_videoFrameBufferSize) {
+                if (!m_firstFramePresented) {
+                    if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_is_stream) {
                         m_firstFramePresented = true;
                         m_startTime = time;
                         m_frameToUpload = searchInd % m_videoFrameBufferSize;
@@ -1568,12 +1537,10 @@ void FFMpegDecode::loadFrameToTexture(double time)
                         uploadNewFrame = true;
                         break;
                     }
-                } else
-                {
+                } else {
                     // if we have a timestamp with a pts that differs less than 25% of a frame duration, present it
                     if (std::fabs(m_ptss[searchInd % m_videoFrameBufferSize] - actRelTime) < (m_frameDur * 0.25)
-                        || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0 && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime))
-                    {
+                        || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0 && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime)) {
                         // if we are playing in loop mode and reached the last m_frame, reset the m_startTime
                         if ((uint) (m_ptss[searchInd % m_videoFrameBufferSize] / m_frameDur) == (m_totNumFrames - 1)) {
                             m_startTime = time;
@@ -1587,22 +1554,20 @@ void FFMpegDecode::loadFrameToTexture(double time)
                 }
 
                 // check if there are frames that are too old
-                searchInd++;
+                ++searchInd;
             }
         }
         else
         {
             // in case there is no timestamp just take the framerate to offset
-            if (!m_consumeFrames && (int)m_nrBufferedFrames >= m_nrFramesToStart)
-            {
+            if (!m_consumeFrames && (int)m_nrBufferedFrames >= m_nrFramesToStart) {
                 m_consumeFrames = true;
                 m_startTime = time;
                 actRelTime = 0.0;
             }
 
             uploadNewFrame = m_consumeFrames && m_nrBufferedFrames > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
-            if (uploadNewFrame)
-            {
+            if (uploadNewFrame) {
                 actRelTime = time - m_startTime;
                 ++m_frameToUpload %= m_videoFrameBufferSize;
 
@@ -1631,16 +1596,13 @@ void FFMpegDecode::loadFrameToTexture(double time)
             && m_consumeFrames
             && uploadNewFrame
             && m_framePtr[m_frameToUpload]->width
-            && m_framePtr[m_frameToUpload]->height)
-        {
+            && m_framePtr[m_frameToUpload]->height) {
             m_mutex.lock();
 
-            if (m_decodeYuv420OnGpu)
-            {
+            if (m_decodeYuv420OnGpu) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty())
-                {
+                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
                     // UV interleaved
                     glActiveTexture(GL_TEXTURE1);
                     glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
@@ -1661,8 +1623,7 @@ void FFMpegDecode::loadFrameToTexture(double time)
                 // we'll set up the texture units for chrominance (U & V) and we'll
                 // put the luminance (Y) data in GL_TEXTURE0 after the if.
 
-                if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty())
-                {
+                if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty()) {
                     // luminance values, whole picture
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
@@ -1686,11 +1647,8 @@ void FFMpegDecode::loadFrameToTexture(double time)
                                     texture_pixel_format(m_srcPixFmt), GL_UNSIGNED_BYTE,
                                     m_framePtr[m_frameToUpload]->data[2]);
                 }
-
-            } else
-            {
-                if (m_usePbos)
-                {
+            } else {
+                if (m_usePbos) {
                     m_pboIndex = (m_pboIndex + 1) % m_nrPboBufs;
                     uint nextIndex = (m_pboIndex + 1) % m_nrPboBufs;
 
@@ -1705,7 +1663,7 @@ void FFMpegDecode::loadFrameToTexture(double time)
                                     m_destHeight,
                                     GL_BGR,
                                     GL_UNSIGNED_BYTE,
-                                    0);
+                                    nullptr);
 
 
                     // bind PBO to update texture source
@@ -1718,10 +1676,10 @@ void FFMpegDecode::loadFrameToTexture(double time)
                     // If you do that, the previous data in PBO will be discarded and
                     // glMapBufferARB() returns a new allocated pointer immediately
                     // even if GPU is still working with the previous data.
-                    glBufferData(GL_PIXEL_UNPACK_BUFFER, m_destWidth * m_destHeight * 4, 0, GL_STREAM_DRAW);
+                    glBufferData(GL_PIXEL_UNPACK_BUFFER, m_destWidth * m_destHeight * 4, nullptr, GL_STREAM_DRAW);
 
                     // map the buffer object into client's memory
-                    GLubyte *ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_destWidth * m_destHeight * 4, GL_MAP_WRITE_BIT);
+                    auto ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_destWidth * m_destHeight * 4, GL_MAP_WRITE_BIT);
 
                     if (ptr && !m_framePtr.empty())
                     {
@@ -1735,8 +1693,7 @@ void FFMpegDecode::loadFrameToTexture(double time)
                     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 
                 } else {
-                    if (!m_framePtr.empty())
-                    {
+                    if (!m_framePtr.empty()) {
                         glActiveTexture(GL_TEXTURE0);
                         glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
                         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_destWidth, m_destHeight,
@@ -1744,16 +1701,16 @@ void FFMpegDecode::loadFrameToTexture(double time)
                     }
                 }
 
-                if (m_downFrameCb)
+                if (m_downFrameCb) {
                     m_downFrameCb(m_bgraFrame[m_frameToUpload]->data[0]);
+                }
             }
 
             // mark as consumed
             m_framePtr[m_frameToUpload]->pts = -1;
 
-            if (m_nrBufferedFrames > 0)
-            {
-                m_nrBufferedFrames--;
+            if (m_nrBufferedFrames > 0) {
+                --m_nrBufferedFrames;
                 //LOG <<  "-- " << m_nrBufferedFrames;
             } else {
                 //LOGE << " not enough frames buffered";
@@ -1767,35 +1724,17 @@ void FFMpegDecode::loadFrameToTexture(double time)
 }
 
 GLenum FFMpegDecode::texture_pixel_format(AVPixelFormat srcFmt) {
-    int format;
-
-    switch (srcFmt) {
-        case AV_PIX_FMT_YUV420P:
-            // color, 1.5 bytes/pixel, call it 1 for the luminance *Y)
-            // part. (we'll generate other textures for the U & V parts)
-            // the shader will turn it into color
-            format = GL_RED;
-            break;
-        case AV_PIX_FMT_NV12:
-            format = GL_RED;
-            break;
-        case AV_PIX_FMT_NV21:
-            format = GL_RED;
-            break;
-        case AV_PIX_FMT_RGB24:
-            // color, 3 bytes/pixel
-            format = GL_BGR;
-            break;
-        default:
-            break;
-    }
-
-    return (format);
+    std::unordered_map<AVPixelFormat, int> formatMap {
+        {AV_PIX_FMT_YUV420P, GL_RED},
+        {AV_PIX_FMT_NV12, GL_RED},
+        {AV_PIX_FMT_NV21, GL_RED},
+        {AV_PIX_FMT_RGB24, GL_BGR},
+    };
+    return formatMap[srcFmt];
 }
 #endif
 
-void FFMpegDecode::seek_frame(int64_t _frame_number, double time)
-{
+void FFMpegDecode::seek_frame(int64_t _frame_number, double time) {
      // Seek to the keyframe at timestamp.
      // 'timestamp' in 'stream_index'.
      //
@@ -1815,17 +1754,16 @@ void FFMpegDecode::seek_frame(int64_t _frame_number, double time)
     avcodec_flush_buffers(m_video_codec_ctx);
 }
 
-double FFMpegDecode::get_duration_sec()
-{
-    double sec = (double) m_formatContext->duration / (double) AV_TIME_BASE;
+double FFMpegDecode::get_duration_sec() {
+    double sec = static_cast<double>(m_formatContext->duration) / static_cast<double>(AV_TIME_BASE);
 
     if (sec < m_eps_zero) {
-        sec = (double) m_formatContext->streams[m_video_stream_index]->duration
+        sec = static_cast<double>(m_formatContext->streams[m_video_stream_index]->duration)
               * r2d(m_formatContext->streams[m_video_stream_index]->time_base);
     }
 
     if (sec < m_eps_zero) {
-        sec = (double) m_formatContext->streams[m_video_stream_index]->duration
+        sec = static_cast<double>(m_formatContext->streams[m_video_stream_index]->duration)
               * r2d(m_formatContext->streams[m_video_stream_index]->time_base);
     }
 
@@ -1833,37 +1771,34 @@ double FFMpegDecode::get_duration_sec()
 }
 
 int64_t FFMpegDecode::get_total_frames() {
+    if (!m_formatContext) {
+        return 0;
+    }
 
-    if (!m_formatContext) return 0;
-
-    if ((int)m_formatContext->nb_streams > m_video_stream_index && m_video_stream_index >= 0 && m_formatContext->streams[m_video_stream_index])
-    {
-        int64_t nbf = m_formatContext->streams[m_video_stream_index]->nb_frames;
-
+    if (static_cast<int32_t>(m_formatContext->nb_streams) > m_video_stream_index
+        && m_video_stream_index >= 0
+        && m_formatContext->streams[m_video_stream_index]) {
+        auto nbf = m_formatContext->streams[m_video_stream_index]->nb_frames;
         if (nbf == 0) {
-            nbf = (int64_t) (get_duration_sec() * get_fps() + 0.5);
+            nbf = std::lround(get_duration_sec() * get_fps());
         }
         return nbf;
-
     } else {
         return 0;
     }
 }
 
-double FFMpegDecode::get_fps()
-{
+double FFMpegDecode::get_fps() {
     double fps = r2d(m_formatContext->streams[m_video_stream_index]->avg_frame_rate);
-
-    if (fps < m_eps_zero)
+    if (fps < m_eps_zero) {
         fps = r2d(m_formatContext->streams[m_video_stream_index]->avg_frame_rate);
-
+    }
     return fps;
 }
 
-void FFMpegDecode::dumpEncoders()
-{
+void FFMpegDecode::dumpEncoders() {
     const AVCodec *current_codec = nullptr;
-    void *i = 0;
+    void *i{};
     while ((current_codec = av_codec_iterate(&i))) {
         if (av_codec_is_encoder(current_codec)) {
             LOG <<  current_codec->name << " " << current_codec->long_name;
@@ -1871,10 +1806,9 @@ void FFMpegDecode::dumpEncoders()
     }
 }
 
-void FFMpegDecode::dumpDecoders()
-{
+void FFMpegDecode::dumpDecoders() {
     const AVCodec *current_codec = nullptr;
-    void *i = 0;
+    void *i{};
     while ((current_codec = av_codec_iterate(&i))) {
         if (av_codec_is_decoder(current_codec)) {
             LOG <<  current_codec->name << " " << (current_codec->long_name ? current_codec->long_name : "");
@@ -1882,104 +1816,67 @@ void FFMpegDecode::dumpDecoders()
     }
 }
 
-void FFMpegDecode::logging(const char *fmt, ...)
- {
-    // if(showLogging)
-    // {
-    //     va_list args;
-    //     f//printf( stderr, "LOG: " );
-    //     va_start( args, m_fmt );
-    //     vf//printf( stderr, m_fmt, args );
-    //     va_end( args );
-    //     f//printf( stderr, "\n" );
-    //
-    // }
-}
-
-void FFMpegDecode::log_callback(void *ptr, int level, const char *fmt, va_list vargs)
-{
-    char buffer[256];
-    va_list args;
-    //va_start (vargs, m_fmt);
-    vsprintf (buffer,fmt, vargs);
-    //perror (m_buffer);
-    //va_end (vargs);
-
-    if (level <= m_logLevel)
-        std::cout << buffer;
-            //vprintf(m_fmt, vargs);
-}
-
-void FFMpegDecode::forceAudioCodec(const std::string& str)
-{
-    if (str == "AAC")
+void FFMpegDecode::forceAudioCodec(const std::string& str) {
+    if (str == "AAC") {
         m_forceAudioCodec = AV_CODEC_ID_AAC;
-    else if (str == "MP3")
+    } else if (str == "MP3") {
         m_forceAudioCodec = AV_CODEC_ID_MP3;
+    }
 }
 
-void FFMpegDecode::clearResources()
-{
+void FFMpegDecode::clearResources() {
     m_resourcesAllocated = false;
-
-    if (m_formatContext)
-    {
+    if (m_formatContext) {
         avformat_close_input(&m_formatContext);
         avformat_free_context(m_formatContext);
         m_formatContext = nullptr;
     }
 
-    if (m_video_codec_ctx)
-    {
+    if (m_video_codec_ctx) {
         avcodec_free_context(&m_video_codec_ctx);
         m_video_codec_ctx = nullptr;
     }
 
-    if (m_audio_codec_ctx)
-    {
-        if (m_dst_sampleBuffer)
+    if (m_audio_codec_ctx) {
+        if (m_dst_sampleBuffer) {
             av_freep(&m_dst_sampleBuffer[0]);
-
+        }
         avcodec_free_context(&m_audio_codec_ctx);
         m_audio_codec_ctx = nullptr;
     }
 
-    if (m_audio_swr_ctx)
-    {
+    if (m_audio_swr_ctx) {
         swr_free(&m_audio_swr_ctx);
         m_audio_swr_ctx = nullptr;
     }
 
-    for (auto &it : m_framePtr)
-    {
+    for (auto &it : m_framePtr) {
         av_frame_free(&it);
     }
+
     m_framePtr.clear();
 
-    if (m_frame)
-    {
+    if (m_frame) {
         av_frame_unref(m_frame);
         av_frame_free(&m_frame);
         m_frame = nullptr;
     }
 
-    if (m_audioFrame)
-    {
+    if (m_audioFrame) {
         av_frame_unref(m_audioFrame);
         av_frame_free(&m_audioFrame);
         m_audioFrame = nullptr;
     }
 
-    if (!m_decodeYuv420OnGpu)
-    {
+    if (!m_decodeYuv420OnGpu) {
         m_buffer.clear();
-        for (auto &it : m_bgraFrame)
+        for (auto &it : m_bgraFrame) {
             av_frame_free(&it);
+        }
         m_bgraFrame.clear();
     }
 
-    if (m_packet)
-    {
+    if (m_packet) {
         av_packet_free(&m_packet);
         m_packet = nullptr;
     }
@@ -1992,21 +1889,13 @@ void FFMpegDecode::clearResources()
 #endif
 
     m_ptss.clear();
-/*
-    if (!m_textures.empty())
-    {
-        for (uint i = 0; i < m_nrTexBuffers; i++)
-            m_textures[i]->releaseTexture();
-        m_textures.clear();
-    }
-*/
+
     if (m_hw_device_ctx){
         av_buffer_unref(&m_hw_device_ctx);
         m_hw_device_ctx = nullptr;
     }
 
-    if (m_img_convert_ctx)
-    {
+    if (m_img_convert_ctx){
         sws_freeContext(m_img_convert_ctx);
         m_img_convert_ctx = nullptr;
     }

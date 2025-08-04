@@ -1,130 +1,127 @@
 #ifdef ARA_USE_PORTAUDIO
 
-#include <algorithm>
-#include <map>
-#include <cstring>
-
 #include "Portaudio/Portaudio.h"
 
 using namespace std;
 
-namespace ara::av
-{
+namespace ara::av {
 
-void Portaudio::start()
-{
-    if (!m_isPlaying)
-    {
+bool Portaudio::init() {
+    // Initialize a library before making any other calls.
+    auto err = Pa_Initialize();
+    if (err != paNoError) {
+        terminate(err);
+        return false;
+    }
+
+    // check the hardware, get capabilities
+
+    // fill the input device with standard parameters
+    auto inDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultInputDevice());
+    m_inputParameters.device = Pa_GetDefaultInputDevice();
+
+    if (inDevInfo) {
+        m_inputParameters.channelCount = std::max<int>(2, inDevInfo->maxInputChannels);
+    }
+
+    m_inputParameters.sampleFormat = paFloat32;
+
+    if (Pa_GetDefaultInputDevice() > -1) {
+        m_inputParameters.suggestedLatency = Pa_GetDeviceInfo(Pa_GetDefaultInputDevice())->defaultLowInputLatency;
+    }
+
+    m_inputParameters.hostApiSpecificStreamInfo = nullptr; //See you specific host's API docs for info on using this field
+
+    const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
+    m_outputParameters.device = Pa_GetDefaultOutputDevice();
+    m_outputParameters.sampleFormat = paFloat32;
+
+    if (outDevInfo) {
+        m_outputParameters.channelCount = outDevInfo->maxOutputChannels;
+    }
+
+    if (Pa_GetDefaultOutputDevice() > -1) {
+        m_outputParameters.suggestedLatency = Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice())->defaultLowOutputLatency;
+    }
+
+    m_outputParameters.hostApiSpecificStreamInfo = nullptr; //See you specific host's API docs for info on using this field
+
+    if (outDevInfo) {
+        LOG << "Portaudio using default output device: " << outDevInfo->name;
+    }
+
+    return true;
+}
+
+void Portaudio::start() {
+    if (!m_isPlaying) {
         // Open an audio I/O stream.
-        err = Pa_OpenDefaultStream( &stream,
+        auto err = Pa_OpenDefaultStream( &stream,
             0,                  // no input channels
             m_outputParameters.channelCount,    // stereo output
             paFloat32,                          // 32 bit floating point output
             m_sample_rate,
             m_framesPerBuffer,                  // frames per m_buffer
             paCallback,
-            (void*)this );
+            reinterpret_cast<void*>(this));
 
-        if ( err != paNoError ) { terminate(); return; }
+        if (err != paNoError) {
+            terminate(err);
+            return;
+        }
 
         err = Pa_StartStream( stream );
-        if ( err != paNoError ) { terminate(); return; }
-
-        LOG << " --- Portaudio playing!";
-
+        if (err != paNoError) {
+            terminate(err);
+            return;
+        }
         m_isPlaying = true;
+        LOG << " --- Portaudio playing!";
     }
 }
 
-void Portaudio::pause()
-{
+void Portaudio::pause() {
     Pa_StopStream(stream);
     m_isPlaying = false;
 }
 
-void Portaudio::stop()
-{
+void Portaudio::stop() {
     pause();
     Pa_CloseStream(stream);
+    LOG << " --- Portaudio stopped!";
 }
 
-void Portaudio::resume()
-{
+void Portaudio::resume() {
     Pa_StartStream(stream);
     m_isPlaying = true;
 }
 
-bool Portaudio::init()
-{
-    // Initialize library before making any other calls.
-    err = Pa_Initialize();
-    if ( err != paNoError ) { terminate(); return false; }
-
-    // check the hardware, get capabilities
-
-    // fill input device with standard parameters
-    const PaDeviceInfo* inDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultInputDevice());
-    m_inputParameters.device = Pa_GetDefaultInputDevice();
-    if (inDevInfo)
-        m_inputParameters.channelCount = std::max<int>(2, inDevInfo->maxInputChannels);
-    m_inputParameters.sampleFormat = paFloat32;
-    if (Pa_GetDefaultInputDevice() > -1)
-       m_inputParameters.suggestedLatency = Pa_GetDeviceInfo(Pa_GetDefaultInputDevice())->defaultLowInputLatency;
-    m_inputParameters.hostApiSpecificStreamInfo = nullptr; //See you specific host's API docs for info on using this field
-
-    const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
-    m_outputParameters.device = Pa_GetDefaultOutputDevice();
-    m_outputParameters.sampleFormat = paFloat32;
-    if (outDevInfo)
-        m_outputParameters.channelCount = outDevInfo->maxOutputChannels;
-    if (Pa_GetDefaultOutputDevice() > -1)
-        m_outputParameters.suggestedLatency = Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice())->defaultLowOutputLatency;
-    m_outputParameters.hostApiSpecificStreamInfo = nullptr; //See you specific host's API docs for info on using this field
-
-    if (outDevInfo)
-        LOG << "Portaudio using default output device: " << outDevInfo->name;
-
-    return true;
-}
-
-
-bool Portaudio::isNrOutChanSupported(int destNrChannels)
-{
-    if (Pa_GetDefaultOutputDevice() > -1)
-    {
+bool Portaudio::isNrOutChanSupported(int destNrChannels) {
+    if (Pa_GetDefaultOutputDevice() > -1) {
         const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
-        if (outDevInfo && destNrChannels <= outDevInfo->maxOutputChannels)
+        if (outDevInfo && destNrChannels <= outDevInfo->maxOutputChannels) {
             return true;
+        }
     }
     return false;
 }
 
-
-bool Portaudio::isSampleRateSupported(double destSampleRate)
-{
-    // m_outputParameters.channelCount = destNrChannels;
-    err = Pa_IsFormatSupported( nullptr, &m_outputParameters, destSampleRate );
-    if ( err != paFormatIsSupported )
-        return false;
-    else
-        return true;
+bool Portaudio::isSampleRateSupported(double destSampleRate) {
+    auto err = Pa_IsFormatSupported( nullptr, &m_outputParameters, destSampleRate );
+    return err == paFormatIsSupported;
 }
 
-
-int Portaudio::getMaxNrOutChannels()
-{
-    if (Pa_GetDefaultOutputDevice() > -1)
-    {
+int Portaudio::getMaxNrOutChannels() {
+    if (Pa_GetDefaultOutputDevice() > -1) {
         const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
-        if (outDevInfo)
+        if (outDevInfo) {
             return outDevInfo->maxOutputChannels;
+        }
     }
     return 0;
 }
 
-
-int Portaudio::getValidOutSampleRate(int destSampleRate)
-{
+int Portaudio::getValidOutSampleRate(int destSampleRate) {
     const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
     PaStreamParameters outputParameters;
     outputParameters.device = Pa_GetDefaultOutputDevice();
@@ -142,53 +139,57 @@ int Portaudio::getValidOutSampleRate(int destSampleRate)
     };
 
     vector<double> supportedSampleRates;
-    PaError err;
-    for (int i=0; standardSampleRates[i] > 0; i++ )
-    {
-        err = Pa_IsFormatSupported( nullptr, &outputParameters, standardSampleRates[i] );
-        if( err == paFormatIsSupported )
+    for (int i=0; standardSampleRates[i] > 0; ++i) {
+        auto err = Pa_IsFormatSupported( nullptr, &outputParameters, standardSampleRates[i] );
+        if (err == paFormatIsSupported ) {
             supportedSampleRates.push_back(standardSampleRates[i]);
+        }
     }
 
     // get the closest sample rate to the desired one
     std::map<double, double> fmtDiff;
-    for (auto &it : supportedSampleRates)
+    for (auto &it : supportedSampleRates) {
         fmtDiff[std::abs(it - destSampleRate)] = it;
+    }
 
-    return fmtDiff.size() > 0 ? (int)fmtDiff.begin()->second : 0;
+    return !fmtDiff.empty() ? (int)fmtDiff.begin()->second : 0;
 }
 
-
 /* This routine will be called by the PortAudio engine when audio is needed.
-** It may called at interrupt level on some machines so don't do anything
-** that could mess up the system like calling malloc() or free().
-** framesPerBuffer refers to on channel
+* It may be called at interrupt level on some machines so don't do anything that could mess up the system like calling
+* malloc() or free().
+ * framesPerBuffer refers to one channel.
+ * channel data must be passed interleaved (left[0], right[0], left[1], right[1], etc)
 */
-int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
+int Portaudio::paCallback(const void *, void *outputBuffer,
                           unsigned long framesPerBuffer,
-                          const PaStreamCallbackTimeInfo* timeInfo,
-                          PaStreamCallbackFlags statusFlags,
-                          void *userData )
-{
-    // Cast data passed through stream to our structure.
-    Portaudio *inst = (Portaudio*)userData;
-    float *out = (float*)outputBuffer;
+                          const PaStreamCallbackTimeInfo*,
+                          PaStreamCallbackFlags,
+                          void *userData) {
+    auto ctx = reinterpret_cast<Portaudio*>(userData);
+    auto out = reinterpret_cast<float*>(outputBuffer);
 
-    unique_lock<mutex> l(*inst->getStreamMtx());
-
-    // if cycle m_buffer not filled, set samples to zero and init
-    if (inst->m_cycleBuffer.empty())
     {
-        memset(out, 0, framesPerBuffer * sizeof(float) * (int)inst->getNrOutChannels());
-    } else
-    {
-        memcpy(out,
-                inst->getCycleBuffer()->consume()->getData(),
-                sizeof(float) * framesPerBuffer* (int)inst->getNrOutChannels());
+        unique_lock<mutex> l(ctx->getStreamMtx());
 
-        // in case the feed was blocked, unblock it now
-        if (inst->m_feedBlock && (*inst->m_feedBlock) && inst->getCycleBuffer()->getFreeSpace() >= inst->m_feedMultiple+1)
-            *inst->m_feedBlock = false;
+        // if cycle m_buffer not filled, set samples to zero and init
+        if (ctx->m_cycleBuffer.empty()) {
+            memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
+        } else {
+            memcpy(out,
+                   ctx->getCycleBuffer().consume()->getDataPtr(),
+                   sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+
+            // in case the feed was blocked, unblock it now
+            if (ctx->m_feedBlock && *ctx->m_feedBlock
+                && ctx->getCycleBuffer().getFreeSpace() >= ctx->m_feedMultiple+1) {
+                *ctx->m_feedBlock = false;
+            }
+        }
+    }
+
+    if (ctx->getStreamProcCb()) {
+        ctx->getStreamProcCb()();
     }
 
     return 0;

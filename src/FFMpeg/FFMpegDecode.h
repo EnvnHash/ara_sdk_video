@@ -32,18 +32,12 @@ namespace ara::glb
 #include <GLBase.h>
 #endif
 
-namespace ara::av
-{
+namespace ara::av {
 
-class FFMpegDecode
-{
+class FFMpegDecode {
 public:
-
-    //FFMpegDecode()=default;
-    //virtual ~FFMpegDecode()=default;
-
     int							        hw_decoder_init(AVCodecContext* ctx, enum AVHWDeviceType type);
-    int							        OpenFile(GLBase* glbase, const std::string& filePath, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, std::function<void()> cb=nullptr);
+    int							        OpenFile(GLBase* glbase, const std::string& filePath, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, const std::function<void()>& cb=nullptr);
 #ifdef __ANDROID__
     int							        OpenAndroidAsset(glb::GLBase* glbase, struct android_app* app, std::string& assetName, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, std::function<void()> cb=nullptr);
     int                                 initMediaCode(AAsset* assetDescriptor);
@@ -55,19 +49,19 @@ public:
 #endif
     static int                          read_packet_from_inbuf(void *opaque, uint8_t *buf, int buf_size);
 
-    int							        OpenCamera(GLBase* glbase, std::string camName, int destWidth, int destHeight, bool decodeYuv420OnGpu=true);
-    int                                 setupStreams(const AVInputFormat* format, AVDictionary** options, std::function<void()> initCb);
+    int							        OpenCamera(GLBase* glbase, const std::string& camName, int destWidth, int destHeight, bool decodeYuv420OnGpu=true);
+    int                                 setupStreams(const AVInputFormat* format, AVDictionary** options, const std::function<void()>& initCb);
     int                                 allocateResources();
-    AVDictionary**                      setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts);
-    AVDictionary*                       filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
-    int                                 check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
+    static AVDictionary**               setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts);
+    static AVDictionary*                filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
+    static int                          check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
 
     void						        start(double time);
     void 						        stop();
     void 						        setPause(bool val) { m_pause = val; }
 
     void 						        alloc_gl_res(AVPixelFormat _srcPixFmt);
-    AVFrame*					        alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, std::vector< std::vector<uint8_t> >::iterator buf);
+    static AVFrame*					    alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, std::vector< std::vector<uint8_t> >::iterator buf);
 
     void 						        singleThreadDecodeLoop();
     int 						        decode_video_packet(AVPacket* pPacket, AVCodecContext* pCodecContext);
@@ -77,14 +71,11 @@ public:
     //void 						        sendFrameLoop();
     //int 						        receiveFrameLoop();
 
-    void 						        logging(const char* fmt, ...);
-    void 						        log_callback(void* ptr, int level, const char* fmt, va_list vargs);
-
     double  					        get_duration_sec();
     double 						        get_fps();
     int64_t 					        get_total_frames();
-    void                                dumpEncoders();
-    void                                dumpDecoders();
+    static void                         dumpEncoders();
+    static void                         dumpDecoders();
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
     inline double 						r2d(AVRational r) { return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den; }
 
@@ -95,13 +86,13 @@ public:
     uint8_t*                            reqNextBuf();
 
 #ifdef ARA_USE_GLBASE
-    void 						        initShader(AVPixelFormat _srcPixFmt);
+    void 						        initShader(AVPixelFormat srcPixFmt);
     Shaders*				            getShader() { return m_shader; }
     void 						        shaderBegin();
-    void 						        shaderEnd();
+    void 						        shaderEnd() const;
 
     void 						        loadFrameToTexture(double time);
-    GLenum						        texture_pixel_format(AVPixelFormat srcFmt);
+    static GLenum						        texture_pixel_format(AVPixelFormat srcFmt);
 
     inline std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
     inline GLuint				        getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
@@ -153,7 +144,6 @@ public:
     std::function<void(uint8_t*)>       m_downFrameCb;
 
 protected:
-    AVCodec*					        m_video_codec=nullptr;
     AVCodec*					        m_audio_codec=nullptr;
     AVCodecContext*				        m_video_codec_ctx=nullptr;
     AVCodecContext*                     m_audio_codec_ctx=nullptr;
