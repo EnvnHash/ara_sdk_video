@@ -6,7 +6,7 @@ using namespace std;
 
 namespace ara::av {
 
-bool Portaudio::init() {
+bool Portaudio::init(const PaInitPar& p) {
     // Initialize a library before making any other calls.
     auto err = Pa_Initialize();
     if (err != paNoError) {
@@ -21,7 +21,7 @@ bool Portaudio::init() {
     m_inputParameters.device = Pa_GetDefaultInputDevice();
 
     if (inDevInfo) {
-        m_inputParameters.channelCount = std::max<int>(2, inDevInfo->maxInputChannels);
+        m_inputParameters.channelCount = !p.numChannels ? std::max<int>(2, inDevInfo->maxInputChannels) : p.numChannels;
     }
 
     m_inputParameters.sampleFormat = paFloat32;
@@ -35,9 +35,10 @@ bool Portaudio::init() {
     const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
     m_outputParameters.device = Pa_GetDefaultOutputDevice();
     m_outputParameters.sampleFormat = paFloat32;
+    m_sample_rate = p.sampleRate ? p.sampleRate : outDevInfo->defaultSampleRate;
 
     if (outDevInfo) {
-        m_outputParameters.channelCount = outDevInfo->maxOutputChannels;
+        m_outputParameters.channelCount = !p.numChannels ? outDevInfo->maxOutputChannels : p.numChannels;
     }
 
     if (Pa_GetDefaultOutputDevice() > -1) {
@@ -161,8 +162,8 @@ int Portaudio::getValidOutSampleRate(int destSampleRate) {
  * framesPerBuffer refers to one channel.
  * channel data must be passed interleaved (left[0], right[0], left[1], right[1], etc)
 */
-int Portaudio::paCallback(const void *, void *outputBuffer,
-                          unsigned long framesPerBuffer,
+int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
+                          uint64_t framesPerBuffer,
                           const PaStreamCallbackTimeInfo*,
                           PaStreamCallbackFlags,
                           void *userData) {
@@ -175,7 +176,7 @@ int Portaudio::paCallback(const void *, void *outputBuffer,
         // if cycle m_buffer not filled, set samples to zero and init
         if (ctx->m_cycleBuffer.empty()) {
             memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
-        } else {
+        } else if (ctx->useCycleBuf()) {
             memcpy(out,
                    ctx->getCycleBuffer().consume()->getDataPtr(),
                    sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
@@ -189,7 +190,7 @@ int Portaudio::paCallback(const void *, void *outputBuffer,
     }
 
     if (ctx->getStreamProcCb()) {
-        ctx->getStreamProcCb()();
+        ctx->getStreamProcCb()(inputBuffer, outputBuffer, framesPerBuffer);
     }
 
     return 0;

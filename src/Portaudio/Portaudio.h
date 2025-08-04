@@ -23,6 +23,12 @@
 
 namespace ara::av {
 
+struct PaInitPar {
+    int32_t sampleRate = 0;
+    int32_t numChannels = 0;
+    bool useCycleBuffer = true;
+};
+
 class Portaudio {
 public :
     struct paSampBuf {
@@ -32,7 +38,7 @@ public :
 
     Portaudio()=default;
 
-    bool init();
+    bool init(const PaInitPar& = PaInitPar());
     void start();
     void stop();
     void pause();
@@ -62,13 +68,16 @@ public :
     auto& getCycleBuffer()      { return m_cycleBuffer; }
     auto& getStreamMtx()                  { return m_streamMtx; }
     auto& getStreamProcCb()      { return m_streamProcCb; }
+    auto& useCycleBuf()                 { return m_useCycleBuf; }
 
-    void setSampleRate(int rate)                            { m_sample_rate = rate; }
-    void setFramesPerBuffer(int nrFrames)                   { m_framesPerBuffer = nrFrames; }
-    void setNrOutputChannel(int nrChan)                     { m_outputParameters.channelCount = nrChan; }
-    void setFeedBlock(std::atomic<bool>* bl)                { m_feedBlock = bl; }
-    void setFeedBlockMultiple(size_t mltpl)                 { m_feedMultiple = mltpl; }
-    void setStreamProcCb(const std::function<void()>& f)    { m_streamProcCb = f; }
+    void setSampleRate(int rate)                { m_sample_rate = rate; }
+    void setFramesPerBuffer(int nrFrames)       { m_framesPerBuffer = nrFrames; }
+    void setNrOutputChannel(int nrChan)         { m_outputParameters.channelCount = nrChan; }
+    void setFeedBlock(std::atomic<bool>* bl)    { m_feedBlock = bl; }
+    void setFeedBlockMultiple(size_t mltpl)     { m_feedMultiple = mltpl; }
+    void setUseCycleBuf(bool val)               { m_useCycleBuf = val; }
+
+    void setStreamProcCb(const std::function<void(const void*, void*, uint64_t)>& f) { m_streamProcCb = f; }
 
     static inline PaStream* stream=nullptr;
     static paSampBuf        data;
@@ -77,13 +86,15 @@ private:
     int                     m_sample_rate=44100;
     int                     m_framesPerBuffer=256;
     bool                    m_isPlaying = false;
+    bool                    m_useCycleBuf = true;
     size_t                  m_feedMultiple = 1;
     std::mutex              m_streamMtx;
     PaStreamParameters      m_inputParameters{0};
     PaStreamParameters      m_outputParameters{0};
     CycleBuffer<float>      m_cycleBuffer;
     std::atomic<bool>*      m_feedBlock=nullptr;
-    std::function<void()>   m_streamProcCb;
+
+    std::function<void(const void*, void*, uint64_t)>   m_streamProcCb;
 };
 }
 

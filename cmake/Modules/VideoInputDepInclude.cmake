@@ -6,6 +6,8 @@ if(UNIX)
     list(APPEND CMAKE_PREFIX_PATH ${CUDA_DIR})
 endif()
 
+include_directories(${THIRD_PARTY})
+
 # FFMpeg
 if(ARA_USE_FFMPEG)
     if (WIN32)

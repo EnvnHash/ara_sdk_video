@@ -10,7 +10,7 @@ using namespace std;
 
 int main(int argc, char** argv) {
     Conditional running;
-    std::array<double, 200> sinTable;
+    std::array<double, 200> sinTable{};
     for (auto i=0; i<sinTable.size(); ++i) {
         sinTable[i] = std::sin(static_cast<double>(i) / static_cast<double>(sinTable.size()) * M_PI * 2.0);
     }
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
     std::ranges::fill(phase, 0);
 
     // set a callback to be called after each portaudio stream callback finish
-    pa.setStreamProcCb([&] {
+    pa.setStreamProcCb([&](const void*, void*, uint64_t) {
         unique_lock<mutex> l(pa.getStreamMtx());
         auto bufPtr = pa.getCycleBuffer().getWriteBuff().getDataPtr();
         for (auto frame=0; frame<pa.getFramesPerBuffer(); ++frame) {

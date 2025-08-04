@@ -18,6 +18,7 @@ include_directories(
 
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
 
+file(GLOB GLB_SRC *.cpp)
 if (ARA_USE_FFMPEG)
 	file(GLOB GLB_FFMPEG FFMpeg/*.cpp)
 endif()
