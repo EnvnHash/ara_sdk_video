@@ -19,6 +19,8 @@ include_directories(
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
 
 file(GLOB GLB_SRC *.cpp)
+file(GLOB AUDIOFILE_SRC AudioFile/*.cpp)
+
 if (ARA_USE_FFMPEG)
 	file(GLOB GLB_FFMPEG FFMpeg/*.cpp)
 endif()
@@ -79,7 +81,7 @@ foreach(DIR IN LISTS REQUIRED_THIRD_PARTY_DIRS)
 endforeach()
 
 
-set(VIDEO_ALL_SRC ${GLB_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_NDI} ${GLB_PORTAUDIO} ${GLB_OPENAL} ${GLB_REALSENSE} CACHE INTERNAL "video_src_all")
+set(VIDEO_ALL_SRC ${GLB_SRC} ${AUDIOFILE_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_NDI} ${GLB_PORTAUDIO} ${GLB_OPENAL} ${GLB_REALSENSE} CACHE INTERNAL "video_src_all")
 
 if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})

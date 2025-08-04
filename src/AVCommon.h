@@ -4,23 +4,11 @@
 
 #pragma once
 
-#include <algorithm>
-#include <functional>
-#include <filesystem>
-#include <map>
-#include <memory>
-#include <mutex>
-#include <string>
-#include <sstream>
-#include <thread>
-#include <vector>
-#include <iomanip>
+#include <util_common.h>
 
-namespace ara::av
-{
+namespace ara::av {
 
-class audioCbData
-{
+class audioCbData {
 public:
     uint32_t nChannels=0;
     uint32_t samples=0;

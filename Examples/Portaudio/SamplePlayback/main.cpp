@@ -3,7 +3,7 @@
 //
 
 #include "Portaudio/Portaudio.h"
-#include <AudioFile.h>
+#include "AudioFile/AudioFileWav.h"
 
 using namespace ara;
 using namespace ara::av;
@@ -11,7 +11,7 @@ using namespace std;
 
 int main(int argc, char** argv) {
     Conditional running;
-    AudioFile<float> audioFile;
+    AudioFileWav audioFile;
 
     try {
         audioFile.load ("stereol.wav");
@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
         auto outBufPtr = reinterpret_cast<float*>(outBuf);
         for (auto frame = 0; frame < framesPerBuf; ++frame) {
             for (int chan=0; chan<pa.getNrOutChannels(); ++chan) {
-                *outBufPtr++ = audioFile.samples[chan][samplePtr];
+                *outBufPtr++ = audioFile.getSample(chan, samplePtr);
             }
             samplePtr = ++samplePtr % audioFile.getNumSamplesPerChannel();
         }

@@ -1,0 +1,180 @@
+/** @file AudioFile.h
+ *  @author Adam Stark
+ *  @copyright Copyright (C) 2017  Adam Stark
+ *
+ * This file is part of the 'AudioFile' library
+ *
+ * MIT License
+ *
+ * Copyright (c) 2017 Adam Stark
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy 
+ * of this software and associated documentation files (the "Software"), to deal 
+ * in the Software without restriction, including without limitation the rights 
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
+ * of the Software, and to permit persons to whom the Software is furnished to do so, 
+ * subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all 
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+ * INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A 
+ * PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT 
+ * HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION 
+ * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE 
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+#pragma once
+
+#if defined (_MSC_VER)
+#undef max
+#undef min
+#define NOMINMAX
+#endif
+
+// disable some warnings on Windows
+#if defined (_MSC_VER)
+__pragma(warning (push))
+    __pragma(warning (disable : 4244))
+    __pragma(warning (disable : 4457))
+    __pragma(warning (disable : 4458))
+    __pragma(warning (disable : 4389))
+    __pragma(warning (disable : 4996))
+#elif defined (__GNUC__)
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wconversion\"")
+_Pragma("GCC diagnostic ignored \"-Wsign-compare\"")
+_Pragma("GCC diagnostic ignored \"-Wshadow\"")
+#endif
+
+#include "AVCommon.h"
+#include "AudioFile/AudioSampleRateConverter.h"
+
+namespace ara::av {
+
+/** The different types of audio file, plus some other types to indicate a failure to load a file, or that one hasn't
+* been loaded yet */
+enum class AudioFileFormat : int32_t { Error = 0, NotLoaded, Wave, Aiff };
+enum WavAudioFormat { PCM = 0x0001, IEEEFloat = 0x0003, ALaw = 0x0006, MULaw = 0x0007, Extensible = 0xFFFE };
+enum AIFFAudioFormat { Uncompressed = 0, Compressed, Error };
+enum class Endianness { LittleEndian = 0, BigEndian };
+
+class AudioFile {
+public:
+    AudioFile();
+
+    /** Constructor, using a given file path to load a file */
+    AudioFile(const std::string &filePath) {
+        load (filePath);
+    }
+
+    /** Loads an audio file from a given file path.
+     * @Returns true if the file was successfully loaded     */
+    bool load(const std::string &filePath);
+
+    /** Saves an audio file to a given file path.
+     * @Returns true if the file was successfully saved */
+    bool save(const std::string &filePath, AudioFileFormat format = AudioFileFormat::Wave);
+
+    /** Loads an audio file from data in memory */
+    virtual bool loadFromMemory(const std::vector<uint8_t> &fileData) = 0;
+
+    /** Saves an audio file to data in memory */
+    virtual bool saveToMemory(std::vector<uint8_t> &fileData, AudioFileFormat format) = 0;
+
+    /** @Returns the sample rate */
+    [[nodiscard]] uint32_t getSampleRate() const { return m_sampleRate; }
+
+    /** @Returns the number of audio channels in the buffer */
+    [[nodiscard]] auto getNumChannels() const { return (int)m_samples_packed.size(); }
+
+    /** @Returns true if the audio file is mono */
+    [[nodiscard]] bool isMono() const { return getNumChannels() == 1; };
+
+    /** @Returns true if the audio file is stereo */
+    [[nodiscard]] bool isStereo() const { return getNumChannels() == 2; }
+
+    /** @Returns the bit depth of each sample */
+    [[nodiscard]] auto getBitDepth() const { return m_bitDepth; }
+
+    /** @Returns the number of samples per channel */
+    [[nodiscard]] auto getNumSamplesPerChannel() const { return !m_samples_packed.empty() ? (int) m_samples_packed[0].size() :  0; }
+
+    /** @Returns the length in seconds of the audio file based on the number of samples and sample rate */
+    [[nodiscard]] auto getLengthInSeconds() const { return (double)getNumSamplesPerChannel() / (double)m_sampleRate; }
+
+    float getSample(int32_t channel, int32_t sampleIdx) { return m_samples_packed[channel][sampleIdx]; }
+
+    /** Prints a summary of the audio file to the console */
+    void printSummary() const;
+
+    /** Set the audio buffer for this AudioFile by copying samples from another buffer.
+     * @Returns true if the buffer was copied successfully. */
+    bool setAudioBuffer(const std::deque<std::deque<float>> &newBuffer);
+
+    /** Sets the audio buffer to a given number of channels and number of samples per channel. This will try to preserve
+     * the existing audio, adding zeros to any new channels or new samples in a given channel. */
+    void setAudioBufferSize(const int numChannels, const int numSamples)  {
+        m_samples_packed.resize (numChannels);
+        setNumSamplesPerChannel (numSamples);
+    }
+
+    /** Sets the number of samples per channel in the audio buffer. This will try to preserve
+     * the existing audio, adding zeros to new samples in a given channel if the number of samples is increased. */
+    void setNumSamplesPerChannel(const int numSamples);
+
+    /** Sets the number of channels. New channels will have the correct number of samples and be initialised to zero */
+    void setNumChannels(const int numChannels);
+
+    /** Sets the bit depth for the audio file. If you use the save() function, this bit depth rate will be used */
+    void setBitDepth(const int numBitsPerSample) { m_bitDepth = numBitsPerSample; }
+
+    /** Sets the sample rate for the audio file. If you use the save() function, this sample rate will be used */
+    void setSampleRate(const uint32_t newSampleRate) { m_sampleRate = newSampleRate; }
+
+    /** Sets whether the library should log error messages to the console. By default this is true */
+    void shouldLogErrorsToConsole(bool logErrors) { m_logErrorsToConsole = logErrors; }
+
+    /** An optional iXML chunk that can be added to the AudioFile.*/
+    std::string iXMLChunk;
+
+protected:
+  //  virtual bool encodeFile(std::vector<uint8_t> &fileData) = 0;
+
+    void clearAudioBuffer();
+
+    static AudioFileFormat determineAudioFileFormat(const std::vector<uint8_t> &fileData);
+
+    static int32_t fourBytesToInt(const std::vector<uint8_t> &source, int startIndex,
+                                         Endianness endianness = Endianness::LittleEndian);
+    static int16_t twoBytesToInt(const std::vector<uint8_t> &source, int startIndex,
+                                        Endianness endianness = Endianness::LittleEndian);
+    static int getIndexOfChunk(const std::vector<uint8_t> &source, const std::string &chunkHeaderID, int startIndex,
+                    Endianness endianness = Endianness::LittleEndian);
+
+    static void addStringToFileData(std::vector<uint8_t> &fileData, std::string s);
+    static void addInt32ToFileData(std::vector<uint8_t> &fileData, int32_t i, Endianness endianness = Endianness::LittleEndian);
+    static void addInt16ToFileData(std::vector<uint8_t> &fileData, int16_t i, Endianness endianness = Endianness::LittleEndian);
+
+    static bool writeDataToFile(const std::vector<uint8_t> &fileData, std::string filePath);
+
+    void reportError(const std::string &errorMessage);
+
+    std::deque<std::deque<float>> m_samples_packed;
+
+    std::deque<float>   m_samples_intrlv;
+    AudioFileFormat     m_audioFileFormat = AudioFileFormat::NotLoaded;
+    uint32_t            m_sampleRate = 44100;
+    int                 m_bitDepth = 16;
+    bool                m_logErrorsToConsole{true};
+};
+
+}
+
+#if defined (_MSC_VER)
+    __pragma(warning (pop))
+#elif defined (__GNUC__)
+    _Pragma("GCC diagnostic pop")
+#endif
