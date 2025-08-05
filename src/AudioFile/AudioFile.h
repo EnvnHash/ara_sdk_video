@@ -59,27 +59,38 @@ namespace ara::av {
 enum class AudioFileFormat : int32_t { Error = 0, NotLoaded, Wave, Aiff };
 enum WavAudioFormat { PCM = 0x0001, IEEEFloat = 0x0003, ALaw = 0x0006, MULaw = 0x0007, Extensible = 0xFFFE };
 enum AIFFAudioFormat { Uncompressed = 0, Compressed, Error };
-enum class Endianness { LittleEndian = 0, BigEndian };
+enum class Endianness : int32_t { LittleEndian = 0, BigEndian };
+enum class SampleOrder : int32_t { Packed = 0, Interleaved };
+struct SampleParseData {
+    int32_t sampleIndex=0;
+    int32_t channel=0;
+    AudioFileFormat aff{};
+    const std::vector<uint8_t>& fileData;
+};
 
 class AudioFile {
 public:
     AudioFile();
 
     /** Constructor, using a given file path to load a file */
-    AudioFile(const std::string &filePath) {
-        load (filePath);
-    }
+    explicit AudioFile(const std::string &filePath, SampleOrder order=SampleOrder::Packed) { load (filePath, order); }
 
     /** Loads an audio file from a given file path.
-     * @Returns true if the file was successfully loaded     */
-    bool load(const std::string &filePath);
+     * @Returns true if the file was successfully loaded */
+    bool load(const std::string &filePath, SampleOrder order=SampleOrder::Packed);
+
+    /** Loads an audio file from data in memory */
+    bool loadFromMemory(const std::vector<uint8_t> &fileData, AudioFileFormat aff);
+
+    virtual bool decodeFile (const std::vector<uint8_t>& fileData) = 0;
+    virtual bool procFormatChunk(const std::vector<uint8_t>& fileData) = 0;
+    bool procHeaderChunk(const std::vector<uint8_t>& fileData, AudioFileFormat aff);
+    void prociXMLChunk(const std::vector<uint8_t>& fileData);
+    bool parseSamples(const std::vector<uint8_t>& fileData, int32_t samplesStartIndex, AudioFileFormat aff);
 
     /** Saves an audio file to a given file path.
      * @Returns true if the file was successfully saved */
     bool save(const std::string &filePath, AudioFileFormat format = AudioFileFormat::Wave);
-
-    /** Loads an audio file from data in memory */
-    virtual bool loadFromMemory(const std::vector<uint8_t> &fileData) = 0;
 
     /** Saves an audio file to data in memory */
     virtual bool saveToMemory(std::vector<uint8_t> &fileData, AudioFileFormat format) = 0;
@@ -88,45 +99,42 @@ public:
     [[nodiscard]] uint32_t getSampleRate() const { return m_sampleRate; }
 
     /** @Returns the number of audio channels in the buffer */
-    [[nodiscard]] auto getNumChannels() const { return (int)m_samples_packed.size(); }
-
-    /** @Returns true if the audio file is mono */
-    [[nodiscard]] bool isMono() const { return getNumChannels() == 1; };
-
-    /** @Returns true if the audio file is stereo */
-    [[nodiscard]] bool isStereo() const { return getNumChannels() == 2; }
+    [[nodiscard]] auto getNumChannels() const { return m_numChannels; }
 
     /** @Returns the bit depth of each sample */
     [[nodiscard]] auto getBitDepth() const { return m_bitDepth; }
 
     /** @Returns the number of samples per channel */
-    [[nodiscard]] auto getNumSamplesPerChannel() const { return !m_samples_packed.empty() ? (int) m_samples_packed[0].size() :  0; }
+    [[nodiscard]] auto getNumSamplesPerChannel() const { return !m_samples.empty() ? static_cast<int32_t>(m_samples[0].size() / (m_sampleOrder == SampleOrder::Packed ? 1 : m_numChannels)) :  0; }
 
     /** @Returns the length in seconds of the audio file based on the number of samples and sample rate */
-    [[nodiscard]] auto getLengthInSeconds() const { return (double)getNumSamplesPerChannel() / (double)m_sampleRate; }
+    [[nodiscard]] auto getLengthInSeconds() const { return static_cast<float>(getNumSamplesPerChannel()) / static_cast<float>(m_sampleRate); }
 
-    float getSample(int32_t channel, int32_t sampleIdx) { return m_samples_packed[channel][sampleIdx]; }
+    float getSample(int32_t channel, int32_t sampleIdx) { return m_sampleOrder == SampleOrder::Packed ? m_samples[channel][sampleIdx] : m_samples[0][sampleIdx * m_numChannels + channel]; }
+
+    const std::deque<std::deque<float>>& getSamplesPacked() { return m_samples; }
+    const std::deque<float>& getSamplesInterleaved() { return m_samples[0]; }
 
     /** Prints a summary of the audio file to the console */
     void printSummary() const;
 
     /** Set the audio buffer for this AudioFile by copying samples from another buffer.
      * @Returns true if the buffer was copied successfully. */
-    bool setAudioBuffer(const std::deque<std::deque<float>> &newBuffer);
+    [[maybe_unused]] bool setAudioBuffer(const std::deque<std::deque<float>> &newBuffer);
 
     /** Sets the audio buffer to a given number of channels and number of samples per channel. This will try to preserve
      * the existing audio, adding zeros to any new channels or new samples in a given channel. */
     void setAudioBufferSize(const int numChannels, const int numSamples)  {
-        m_samples_packed.resize (numChannels);
-        setNumSamplesPerChannel (numSamples);
+        m_samples.resize(numChannels);
+        setNumSamplesPerChannel(numSamples);
     }
 
     /** Sets the number of samples per channel in the audio buffer. This will try to preserve
      * the existing audio, adding zeros to new samples in a given channel if the number of samples is increased. */
-    void setNumSamplesPerChannel(const int numSamples);
+    void setNumSamplesPerChannel(int numSamples);
 
     /** Sets the number of channels. New channels will have the correct number of samples and be initialised to zero */
-    void setNumChannels(const int numChannels);
+    void setNumChannels(int numChannels);
 
     /** Sets the bit depth for the audio file. If you use the save() function, this bit depth rate will be used */
     void setBitDepth(const int numBitsPerSample) { m_bitDepth = numBitsPerSample; }
@@ -138,12 +146,16 @@ public:
     void shouldLogErrorsToConsole(bool logErrors) { m_logErrorsToConsole = logErrors; }
 
     /** An optional iXML chunk that can be added to the AudioFile.*/
-    std::string iXMLChunk;
 
 protected:
   //  virtual bool encodeFile(std::vector<uint8_t> &fileData) = 0;
 
     void clearAudioBuffer();
+
+    float parse8BitSample(const SampleParseData& sd);
+    float parse16BitSample(const SampleParseData& sd);
+    float parse24BitSample(const SampleParseData& sd);
+    float parse32BitSample(const SampleParseData& sd);
 
     static AudioFileFormat determineAudioFileFormat(const std::vector<uint8_t> &fileData);
 
@@ -158,17 +170,27 @@ protected:
     static void addInt32ToFileData(std::vector<uint8_t> &fileData, int32_t i, Endianness endianness = Endianness::LittleEndian);
     static void addInt16ToFileData(std::vector<uint8_t> &fileData, int16_t i, Endianness endianness = Endianness::LittleEndian);
 
-    static bool writeDataToFile(const std::vector<uint8_t> &fileData, std::string filePath);
+    static bool writeDataToFile(const std::vector<uint8_t> &fileData, const std::string& filePath);
 
-    void reportError(const std::string &errorMessage);
+    void reportError(const std::string &errorMessage) const;
 
-    std::deque<std::deque<float>> m_samples_packed;
-
-    std::deque<float>   m_samples_intrlv;
-    AudioFileFormat     m_audioFileFormat = AudioFileFormat::NotLoaded;
+    std::deque<std::deque<float>> m_samples;
     uint32_t            m_sampleRate = 44100;
+    int32_t             m_numChannels = 0;
+    uint16_t            m_numBytesPerBlock = 0;
+    uint16_t            m_audioFormat = 0;
+    SampleOrder         m_sampleOrder = SampleOrder::Packed;
     int                 m_bitDepth = 16;
     bool                m_logErrorsToConsole{true};
+
+    int32_t     m_numBytesPerSample = 0;
+    int32_t     m_numSamplesPerChannel = 0;
+    int32_t     m_dataChunkSize = 0;
+    int32_t     m_indexOfFormatChunk = 0;
+    int32_t     m_indexOfSoundDataChunk = 0;
+    int32_t     m_indexOfDataChunk = 0;
+    int32_t     m_indexOfXMLChunk = 0;
+    std::string m_iXMLChunk;
 };
 
 }

@@ -22,19 +22,19 @@ struct AiffUtilities {
 
         // Exponent
         // byte 0: ignore the sign and shift the most significant bits to the left by one byte
-        uint16_t msbShifted = (static_cast<uint16_t> (bytes[0] & 0x7F) << 8);
+        auto msbShifted = (static_cast<uint16_t> (bytes[0] & 0x7F) << 8);
 
         // calculate exponent by combining byte 0 and byte 1 and subtract bias
-        uint16_t exponent = (msbShifted | static_cast<uint16_t> (bytes[1])) - 16383;
+        auto exponent = (msbShifted | static_cast<uint16_t> (bytes[1])) - 16383;
 
         // Mantissa
         // Extract the mantissa (remaining 64 bits) by looping over the remaining
         // bytes and combining them while shifting the result to the left by
         // 8 bits each time
         uint64_t mantissa = 0;
-
-        for (int i = 2; i < 10; ++i)
+        for (int i = 2; i < 10; ++i) {
             mantissa = (mantissa << 8) | bytes[i];
+        }
 
         // Normalize the mantissa (implicit leading 1 for normalized values)
         double normalisedMantissa = static_cast<double> (mantissa) / (1ULL << 63);
@@ -47,7 +47,6 @@ struct AiffUtilities {
     static inline void encodeAiffSampleRate(double sampleRate, uint8_t *bytes)  {
         // Determine the sign
         int sign = (sampleRate < 0) ? -1 : 1;
-
         if (sign == -1) {
             sampleRate = -sampleRate;
         }
@@ -56,30 +55,31 @@ struct AiffUtilities {
         bytes[0] = (sign == -1) ? 0x80 : 0x00;
 
         // Calculate the exponent using logarithm (log base 2)
-        int exponent = (log (sampleRate) / log (2.0));
+        auto exponent = (log (sampleRate) / log (2.0));
 
         // Add bias to exponent for AIFF
-        uint16_t biasedExponent = static_cast<uint16_t> (exponent + 16383);
+        auto biasedExponent = static_cast<uint16_t> (exponent + 16383);
 
         // Normalize the sample rate
-        double normalizedSampleRate = sampleRate / pow (2.0, exponent);
+        auto normalizedSampleRate = sampleRate / pow (2.0, exponent);
 
         // Calculate the mantissa
-        uint64_t mantissa = static_cast<uint64_t> (normalizedSampleRate * (1ULL << 63));
+        auto mantissa = static_cast<uint64_t> (normalizedSampleRate * (1ULL << 63));
 
         // Pack the exponent into first two bytes of 10-byte AIFF format
         bytes[0] |= (biasedExponent >> 8) & 0x7F;   // Upper 7 bits of exponent
         bytes[1] = biasedExponent & 0xFF;           // Lower 8 bits of exponent
 
         // Put the mantissa into byte array
-        for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < 8; ++i) {
             bytes[2 + i] = (mantissa >> (8 * (7 - i))) & 0xFF;
+        }
     }
 };
 
 class AudioFileAiff : public AudioFile {
-    bool loadFromMemory(const std::vector<uint8_t>& fileData) override ;
-    bool decodeFile(const std::vector<uint8_t>& fileData);
+    bool decodeFile(const std::vector<uint8_t>& fileData) override;
+    bool procFormatChunk(const std::vector<uint8_t>& fileData) override;
     bool saveToMemory(std::vector<uint8_t>& fileData, AudioFileFormat format) override;
     bool encodeFile(std::vector<uint8_t>& fileData);
 
@@ -89,7 +89,7 @@ class AudioFileAiff : public AudioFile {
     }
 
     static void addSampleRateToAiffData(std::vector<uint8_t>& fileData, uint32_t sampleRateToAdd) {
-        std::array<uint8_t, 10> sampleRateData;
+        std::array<uint8_t, 10> sampleRateData{};
         AiffUtilities::encodeAiffSampleRate (static_cast<double> (sampleRateToAdd), sampleRateData.data());
         fileData.insert(fileData.end(), sampleRateData.begin(), sampleRateData.end());
     }
