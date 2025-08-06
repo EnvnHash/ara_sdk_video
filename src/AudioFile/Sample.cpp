@@ -31,4 +31,25 @@ void Sample::load(const std::filesystem::path& p) {
     }
 }
 
+float Sample::consume(int32_t frame, int32_t chan, int32_t sampleRate) {
+    auto playPosInSec = static_cast<double>(frame) / static_cast<double>(sampleRate) + m_playHead;
+    if (playPosInSec >= m_audioFile->getLengthInSeconds()) {
+        return 0.f;
+    }
+
+    auto offsetInFrames = playPosInSec * static_cast<double>(m_audioFile->getSampleRate());
+    auto& sampBuffer = m_audioFile->getSamplesInterleaved();
+    auto lowerSample = sampBuffer[static_cast<int32_t>(offsetInFrames) * m_audioFile->getNumChannels() + chan];
+    auto upperSample = sampBuffer[static_cast<int32_t>(std::ceil(offsetInFrames)) * m_audioFile->getNumChannels() + chan];
+    auto blend = offsetInFrames - std::floor(offsetInFrames);
+    return static_cast<float>(lowerSample * (1.0 - blend) + upperSample * blend);
+}
+
+void Sample::advancePlayHead(int32_t frames, int32_t sampleRate) {
+    m_playHead += frames / static_cast<double>(sampleRate);
+    if (m_looping && m_playHead >= m_audioFile->getLengthInSeconds()) {
+        m_playHead = 0.0;
+    }
+}
+
 }

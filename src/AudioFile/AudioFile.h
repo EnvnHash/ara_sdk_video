@@ -111,7 +111,9 @@ public:
     /** @Returns the length in seconds of the audio file based on the number of samples and sample rate */
     [[nodiscard]] auto getLengthInSeconds() const { return static_cast<float>(getNumSamplesPerChannel()) / static_cast<float>(m_sampleRate); }
 
-    float getSample(int32_t channel, int32_t sampleIdx) { return m_sampleOrder == SampleOrder::Packed ? m_samples[channel][sampleIdx] : m_samples[0][sampleIdx * m_numChannels + channel]; }
+    float getSample(int32_t channel, int32_t sampleIdx) {
+        return m_sampleOrder == SampleOrder::Packed ? m_samples[channel][sampleIdx] : m_samples[0][sampleIdx * m_numChannels + channel];
+    }
 
     const std::deque<std::deque<float>>& getSamplesPacked() { return m_samples; }
     const std::deque<float>& getSamplesInterleaved() { return m_samples[0]; }

@@ -48,24 +48,16 @@ void PortaudioAudioEngine::procSampleQueue() {
 }
 
 void PortaudioAudioEngine::addSampleAtPos(Sample& samp, int32_t frameBufPos) {
-    auto outBufPtr = m_cycleBuffer.getWriteBuff().getDataPtr();
-
-    auto sampBufPtr = std::next(samp.getBuffer()->begin(), samp.getPlayPos());
-    auto sampNumChan = samp.getNumChannels();
-    auto framesToWrite = std::min(m_framesPerBuffer, static_cast<int32_t>(samp.getBuffer()->size() - samp.getPlayPos()) / sampNumChan);
+    auto outBufPtr = m_cycleBuffer.getWriteBuff().getData().begin();
+    auto framesToWrite = std::min(m_framesPerBuffer, static_cast<int32_t>(samp.getBuffer()->size() - samp.getPlayPos()) / samp.getNumChannels());
 
     for (auto frame = frameBufPos; frame < framesToWrite; ++frame) {
         for (auto chan=0; chan < m_numChannels; ++chan, ++outBufPtr) {
-            *outBufPtr = *(sampBufPtr + std::min(sampNumChan -1, chan));
+            *outBufPtr = samp.consume(frame, chan, m_sampleRate);
         }
-        sampBufPtr += sampNumChan;
     }
 
-    auto newPlayPos = samp.getPlayPos() + framesToWrite * sampNumChan;
-    if (samp.isLooping() && newPlayPos >= (samp.getBuffer()->size() - 1)) {
-        newPlayPos = 0;
-    }
-    samp.setPlayPos(newPlayPos);
+    samp.advancePlayHead(framesToWrite, m_sampleRate);
 }
 
 int32_t PortaudioAudioEngine::getActFrameBufPos() {

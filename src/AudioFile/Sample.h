@@ -16,6 +16,8 @@ public:
     void load(const std::filesystem::path& p);
 
     void printInfo() const { if (m_audioFile) m_audioFile->printSummary(); }
+    float consume(int32_t frame, int32_t chan, int32_t sampleRate);
+    void advancePlayHead(int32_t frame, int32_t sampleRate);
 
     bool isLooping()                        { return m_looping; }
     int64_t& getPlayPos()                   { return m_posPointer; }
@@ -29,6 +31,7 @@ protected:
     std::unique_ptr<AudioFile>  m_audioFile;
     bool                        m_looping = false;
     int64_t                     m_posPointer = 0;
+    double                      m_playHead = 0;
 };
 
 }
