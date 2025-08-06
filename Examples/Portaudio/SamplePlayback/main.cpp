@@ -3,7 +3,6 @@
 //
 
 #include "Portaudio/PortaudioAudioEngine.h"
-#include "AudioFile/Sample.h"
 
 using namespace ara;
 using namespace ara::av;
@@ -18,14 +17,22 @@ int main(int argc, char** argv) {
         .allocateBuffers = 3
     });
 
+    auto& sine = pa.loadSample("sine.wav");
+    sine.setLooping(true);
+    sine.printInfo();
+
     auto& sample = pa.loadSample("stereol.wav");
-    sample.setLooping(true);
     sample.printInfo();
 
     pa.start();
     pa.printInfo();
 
-    pa.play(sample);
+    std::thread([&]{
+        std::this_thread::sleep_for(2s);
+        pa.play(sample);
+    }).detach();
+
+    pa.play(sine);
     running.wait(5000); // play for 5 sec
     pa.stop();
 

@@ -17,7 +17,7 @@ public:
     Sample& loadSample(const std::filesystem::path& p);
 
 private:
-    void addSampleAtPos(Sample& samp, int32_t frameBufPos);
+    void addSampleAtPos(Sample& samp);
     int32_t getActFrameBufPos();
 
     std::chrono::system_clock::time_point   m_paStartTime;

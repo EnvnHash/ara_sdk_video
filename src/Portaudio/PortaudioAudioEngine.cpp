@@ -28,15 +28,15 @@ void PortaudioAudioEngine::play(Sample& samp) {
         return;
     }
 
-    //addSampleAtPos(samp, getActFrameBufPos()); // immediately add the first fragment
     m_samplePlayQueue.emplace_back(&samp);
 }
 
 void PortaudioAudioEngine::procSampleQueue() {
     bool countUp = false;
+    std::ranges::fill(m_cycleBuffer.getWriteBuff().getData(), 0.f);
     for (auto samp : m_samplePlayQueue) {
         if (samp->getBuffer() && (samp->getPlayPos() < samp->getBuffer()->size() || samp->isLooping())) {
-            addSampleAtPos(*samp, 0);
+            addSampleAtPos(*samp);
             countUp = true;
         }
     }
@@ -47,13 +47,13 @@ void PortaudioAudioEngine::procSampleQueue() {
     }
 }
 
-void PortaudioAudioEngine::addSampleAtPos(Sample& samp, int32_t frameBufPos) {
+void PortaudioAudioEngine::addSampleAtPos(Sample& samp) {
     auto outBufPtr = m_cycleBuffer.getWriteBuff().getData().begin();
     auto framesToWrite = std::min(m_framesPerBuffer, static_cast<int32_t>(samp.getBuffer()->size() - samp.getPlayPos()) / samp.getNumChannels());
 
-    for (auto frame = frameBufPos; frame < framesToWrite; ++frame) {
+    for (auto frame = 0; frame < framesToWrite; ++frame) {
         for (auto chan=0; chan < m_numChannels; ++chan, ++outBufPtr) {
-            *outBufPtr = samp.consume(frame, chan, m_sampleRate);
+            *outBufPtr += samp.consume(frame, chan, m_sampleRate);
         }
     }
 

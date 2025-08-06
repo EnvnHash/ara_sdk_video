@@ -24,7 +24,7 @@ void Sample::load(const std::filesystem::path& p) {
             }
             m_audioFile->load(p.string(), SampleOrder::Interleaved);
         } else {
-            throw("File doesn't exist");
+            throw std::runtime_error("File doesn't exist");
         }
     } catch(const std::runtime_error& err) {
         LOGE << err.what();
@@ -37,10 +37,11 @@ float Sample::consume(int32_t frame, int32_t chan, int32_t sampleRate) {
         return 0.f;
     }
 
+    auto limitedChan = std::min(chan, m_audioFile->getNumChannels()-1);
     auto offsetInFrames = playPosInSec * static_cast<double>(m_audioFile->getSampleRate());
     auto& sampBuffer = m_audioFile->getSamplesInterleaved();
-    auto lowerSample = sampBuffer[static_cast<int32_t>(offsetInFrames) * m_audioFile->getNumChannels() + chan];
-    auto upperSample = sampBuffer[static_cast<int32_t>(std::ceil(offsetInFrames)) * m_audioFile->getNumChannels() + chan];
+    auto lowerSample = sampBuffer[static_cast<int32_t>(offsetInFrames) * m_audioFile->getNumChannels() + limitedChan];
+    auto upperSample = sampBuffer[static_cast<int32_t>(std::ceil(offsetInFrames)) * m_audioFile->getNumChannels() + limitedChan];
     auto blend = offsetInFrames - std::floor(offsetInFrames);
     return static_cast<float>(lowerSample * (1.0 - blend) + upperSample * blend);
 }
