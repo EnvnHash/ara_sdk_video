@@ -105,15 +105,15 @@ bool AudioFileAiff::encodeFile(std::vector<uint8_t>& fileData)  {
     for (int i = 0; i < getNumSamplesPerChannel(); ++i) {
         for (int channel = 0; channel < getNumChannels(); ++channel) {
             if (m_bitDepth == 8) {
-                uint8_t byte = static_cast<uint8_t> (AudioSampleConverter<float>::sampleToSignedByte(m_samples[channel][i]));
+                auto byte = static_cast<uint8_t>(AudioSampleConverter<float>::sampleToSignedByte(m_samples[channel][i]));
                 fileData.emplace_back(byte);
             } else if (m_bitDepth == 16) {
-                int16_t sampleAsInt = AudioSampleConverter<float>::sampleToSixteenBitInt(m_samples[channel][i]);
+                auto sampleAsInt = AudioSampleConverter<float>::sampleToSixteenBitInt(m_samples[channel][i]);
                 addInt16ToFileData (fileData, sampleAsInt, Endianness::BigEndian);
             } else if (m_bitDepth == 24) {
-                int32_t sampleAsIntAgain = AudioSampleConverter<float>::sampleToTwentyFourBitInt(m_samples[channel][i]);
+                auto sampleAsIntAgain = AudioSampleConverter<float>::sampleToTwentyFourBitInt(m_samples[channel][i]);
 
-                uint8_t bytes[3];
+                uint8_t bytes[3]{};
                 bytes[0] = static_cast<uint8_t>((sampleAsIntAgain >> 16) & 0xFF);
                 bytes[1] = static_cast<uint8_t>((sampleAsIntAgain >>  8) & 0xFF);
                 bytes[2] = static_cast<uint8_t>(sampleAsIntAgain & 0xFF);
@@ -140,7 +140,7 @@ bool AudioFileAiff::encodeFile(std::vector<uint8_t>& fileData)  {
     }
 
     // check that the various sizes we put in the metadata are correct
-    if (fileSizeInBytes != static_cast<int32_t> (fileData.size() - 8) || soundDataChunkSize != getNumSamplesPerChannel() *  numBytesPerFrame + 8) {
+    if (fileSizeInBytes != static_cast<int32_t>(fileData.size() - 8) || soundDataChunkSize != getNumSamplesPerChannel() *  numBytesPerFrame + 8) {
         reportError ("ERROR: Incorrect file or data chunk size.");
         return false;
     }

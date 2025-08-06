@@ -16,10 +16,9 @@ int main(int argc, char** argv) {
     }
 
     Portaudio pa;
-    pa.init(); // deduces the actual audio hardware configuration
+    pa.init({ .allocateBuffers = 3 }); // deduces the actual audio hardware configuration
 
     // init cycle buffer
-    pa.getCycleBuffer().allocateBuffers(3, pa.getFramesPerBuffer() * pa.getNrOutChannels()); // 3 stereo buffers
     std::deque<size_t> phase(pa.getNrOutChannels());
     std::ranges::fill(phase, 0);
 
@@ -33,7 +32,7 @@ int main(int argc, char** argv) {
                 phase[chan] += chan+1; // different pitch for left and right
             }
         }
-        pa.getCycleBuffer().countUp();
+        pa.getCycleBuffer().feedCountUp();
     });
 
     pa.start();

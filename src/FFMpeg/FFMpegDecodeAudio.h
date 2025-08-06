@@ -17,8 +17,8 @@ namespace ara::av {
 class FFMpegDecodeAudio : public FFMpegDecode {
 public:
     int                     OpenFile(GLBase* glbase, const std::string& filePath, int destWidth, int destHeight);
-    void					start(double time);
-    void 					stop();
+    void					start(double time) override;
+    void 					stop() override;
     void                    recv_audio_packet(audioCbData& data);
 
 private:

@@ -56,7 +56,6 @@ static enum AVPixelFormat find_fmt_by_hw_type(const enum AVHWDeviceType type) {
     return fmt;
 }
 
-
 int FFMpegDecode::hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type) {
     int err = 0;
 
@@ -68,7 +67,6 @@ int FFMpegDecode::hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType
 
     return err;
 }
-
 
 static enum AVPixelFormat get_hw_format(AVCodecContext*, const enum AVPixelFormat *pix_fmts) {
     const enum AVPixelFormat *p;
@@ -94,7 +92,6 @@ static enum AVPixelFormat get_hw_format(AVCodecContext*, const enum AVPixelForma
     return ret;
 }
 
-
 int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useNrThreads, int destWidth,
                            int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart, const std::function<void()>& initCb) {
     m_resourcesAllocated = false;
@@ -119,8 +116,7 @@ int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useN
 
     // dumpDecoders();
 
-    if (m_useHwAccel)
-    {
+    if (m_useHwAccel) {
 #if defined(__linux__) && !defined(ANDROID)
         std::string hwDevType("vdpau");
 #elif _WIN32
@@ -151,7 +147,7 @@ int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useN
         }
     }
 
-    av_log_set_callback( &ffmpeg::LogCallbackShim );	// custom logging
+    av_log_set_callback(&ffmpeg::LogCallbackShim);	// custom logging
 
     // AVFormatContext holds the header information from the m_format (Container)
     m_formatContext = avformat_alloc_context();
@@ -160,8 +156,7 @@ int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useN
         return 0;
     }
 
-    if (!av_dict_get(m_format_opts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE))
-    {
+    if (!av_dict_get(m_format_opts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE)) {
         av_dict_set(&m_format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
         m_scan_all_pmts_set = 1;
     }
@@ -197,10 +192,8 @@ int FFMpegDecode::OpenFile(GLBase *glbase, const std::string& filePath, int useN
         }
     }
 
-    if (doStart)
-    {
-        m_decodeThread = std::thread([this, initCb]
-        {
+    if (doStart) {
+        m_decodeThread = std::thread([this, initCb]{
             m_startTime = 0.0;
             m_run = true;
             setupStreams(nullptr, &m_format_opts, initCb);
@@ -1030,7 +1023,8 @@ void FFMpegDecode::alloc_gl_res(AVPixelFormat srcPixFmt) {
 #endif
 }
 
-AVFrame* FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, vector<vector<uint8_t>>::iterator it) {
+AVFrame *FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int height,
+                                     std::vector<std::vector<uint8_t>>::iterator buf) {
     auto picture = av_frame_alloc();
     if (!picture) {
         return nullptr;
@@ -1042,10 +1036,10 @@ AVFrame* FFMpegDecode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int 
     picture->pts = -1;
 
     // Allocate memory for the raw data we get when converting.
-    (*it) = vector<uint8_t>( av_image_get_buffer_size(pix_fmt, width, height, 1) );
+    *buf = vector<uint8_t>( av_image_get_buffer_size(pix_fmt, width, height, 1) );
 
     // Assign appropriate parts of buffer to image planes in m_inpFrame
-    av_image_fill_arrays(picture->data, picture->linesize, &(*it)[0], pix_fmt, width, height, 1);
+    av_image_fill_arrays(picture->data, picture->linesize, &(*buf)[0], pix_fmt, width, height, 1);
     return picture;
 }
 
@@ -1734,7 +1728,7 @@ GLenum FFMpegDecode::texture_pixel_format(AVPixelFormat srcFmt) {
 }
 #endif
 
-void FFMpegDecode::seek_frame(int64_t _frame_number, double time) {
+void FFMpegDecode::seek_frame(int64_t frame_number, double time) {
      // Seek to the keyframe at timestamp.
      // 'timestamp' in 'stream_index'.
      //
@@ -1750,7 +1744,7 @@ void FFMpegDecode::seek_frame(int64_t _frame_number, double time) {
     // dauert manchmal lange... geht wohl nicht besser
     m_startTime = time;
 
-    av_seek_frame(m_formatContext, m_video_stream_index, _frame_number, AVSEEK_FLAG_BACKWARD);
+    av_seek_frame(m_formatContext, m_video_stream_index, frame_number, AVSEEK_FLAG_BACKWARD);
     avcodec_flush_buffers(m_video_codec_ctx);
 }
 

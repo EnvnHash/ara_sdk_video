@@ -26,6 +26,7 @@ namespace ara::av {
 struct PaInitPar {
     int32_t sampleRate = 0;
     int32_t numChannels = 0;
+    int32_t allocateBuffers = 0;
     bool useCycleBuffer = true;
 };
 
@@ -36,13 +37,13 @@ public :
         float right_phase{};
     };
 
-    Portaudio()=default;
+    Portaudio() = default;
 
-    bool init(const PaInitPar& = PaInitPar());
-    void start();
-    void stop();
-    void pause();
-    void resume();
+    virtual bool init(const PaInitPar& = PaInitPar());
+    virtual void start();
+    virtual void stop();
+    virtual void pause();
+    virtual void resume();
 
     static bool isNrOutChanSupported(int destNrChannels);
     bool isSampleRateSupported(double destSampleRate);
@@ -55,22 +56,25 @@ public :
                           PaStreamCallbackFlags statusFlags,
                           void *userData);
 
+    virtual int32_t openStreams();
     static void terminate(const PaError& err) {
         Pa_Terminate();
-        LOGE << "An error occured while using the portaudio stream";
+        LOGE << "An error occurred while using the portaudio stream";
         LOGE << "Error number: " << err;
         LOGE << "Error message: " << Pa_GetErrorText(err);
     }
 
-    [[nodiscard]] bool isRunning() const            { return m_isPlaying; }
-    [[nodiscard]] int getFramesPerBuffer() const    { return m_framesPerBuffer; }
-    [[nodiscard]] int getNrOutChannels() const      { return m_outputParameters.channelCount; }
-    auto& getCycleBuffer()      { return m_cycleBuffer; }
-    auto& getStreamMtx()                  { return m_streamMtx; }
+    void printInfo();
+
+    [[nodiscard]] bool isRunning() const         { return m_isPlaying; }
+    [[nodiscard]] int getFramesPerBuffer() const { return m_framesPerBuffer; }
+    [[nodiscard]] int getNrOutChannels() const   { return m_outputParameters.channelCount; }
+    auto& getCycleBuffer()     { return m_cycleBuffer; }
+    auto& getStreamMtx()              { return m_streamMtx; }
     auto& getStreamProcCb()      { return m_streamProcCb; }
     auto& useCycleBuf()                 { return m_useCycleBuf; }
 
-    void setSampleRate(int rate)                { m_sample_rate = rate; }
+    void setSampleRate(int rate)                { m_sampleRate = rate; }
     void setFramesPerBuffer(int nrFrames)       { m_framesPerBuffer = nrFrames; }
     void setNrOutputChannel(int nrChan)         { m_outputParameters.channelCount = nrChan; }
     void setFeedBlock(std::atomic<bool>* bl)    { m_feedBlock = bl; }
@@ -82,16 +86,18 @@ public :
     static inline PaStream* stream=nullptr;
     static paSampBuf        data;
 
-private:
-    int                     m_sample_rate=44100;
+protected:
+    int                     m_sampleRate=44100;
     int                     m_framesPerBuffer=256;
+    int                     m_numChannels=0;
     bool                    m_isPlaying = false;
     bool                    m_useCycleBuf = true;
+    PaInitPar               m_initPar;
     size_t                  m_feedMultiple = 1;
     std::mutex              m_streamMtx;
     PaStreamParameters      m_inputParameters{0};
     PaStreamParameters      m_outputParameters{0};
-    CycleBuffer<float>      m_cycleBuffer;
+    CycleBuffer<float>      m_cycleBuffer;  /// interleaved sample order, must be a multiple of framesPerBuffer * numChannels
     std::atomic<bool>*      m_feedBlock=nullptr;
 
     std::function<void(const void*, void*, uint64_t)>   m_streamProcCb;

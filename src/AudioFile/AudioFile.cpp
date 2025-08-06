@@ -14,6 +14,7 @@ AudioFile::AudioFile() {
 
 void AudioFile::printSummary() const {
     LOG << "|======================================|";
+    LOG << "Sample Info: ";
     LOG << "Num Channels: " << getNumChannels();
     LOG << "Num Samples Per Channel: " << getNumSamplesPerChannel();
     LOG << "Sample Rate: " << m_sampleRate;
@@ -121,6 +122,8 @@ bool AudioFile::loadFromMemory(const std::vector<uint8_t>& fileData, AudioFileFo
 
     auto res = decodeFile(fileData);
     prociXMLChunk(fileData);
+
+    m_loaded = true;
     return res;
 }
 

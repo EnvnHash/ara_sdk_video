@@ -14,6 +14,8 @@ bool Portaudio::init(const PaInitPar& p) {
         return false;
     }
 
+    m_initPar = p;
+
     // check the hardware, get capabilities
 
     // fill the input device with standard parameters
@@ -35,7 +37,7 @@ bool Portaudio::init(const PaInitPar& p) {
     const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
     m_outputParameters.device = Pa_GetDefaultOutputDevice();
     m_outputParameters.sampleFormat = paFloat32;
-    m_sample_rate = p.sampleRate ? p.sampleRate : outDevInfo->defaultSampleRate;
+    m_sampleRate = p.sampleRate ? p.sampleRate : outDevInfo->defaultSampleRate;
 
     if (outDevInfo) {
         m_outputParameters.channelCount = !p.numChannels ? outDevInfo->maxOutputChannels : p.numChannels;
@@ -54,17 +56,26 @@ bool Portaudio::init(const PaInitPar& p) {
     return true;
 }
 
+int32_t Portaudio::openStreams() {
+    // Open an audio I/O stream.
+    return Pa_OpenDefaultStream(&stream,
+                                    m_inputParameters.channelCount,
+                                    m_outputParameters.channelCount,
+                                    paFloat32,                          // always 32 bit floating point for simplicity
+                                    m_sampleRate,
+                                    m_framesPerBuffer,
+                                    paCallback,
+                                    reinterpret_cast<void*>(this));
+}
+
 void Portaudio::start() {
     if (!m_isPlaying) {
-        // Open an audio I/O stream.
-        auto err = Pa_OpenDefaultStream( &stream,
-            0,                  // no input channels
-            m_outputParameters.channelCount,    // stereo output
-            paFloat32,                          // 32 bit floating point output
-            m_sample_rate,
-            m_framesPerBuffer,                  // frames per m_buffer
-            paCallback,
-            reinterpret_cast<void*>(this));
+        auto err = openStreams();
+        m_numChannels = m_outputParameters.channelCount;
+
+        if (m_initPar.allocateBuffers) {
+            m_cycleBuffer.allocateBuffers(m_initPar.allocateBuffers, m_framesPerBuffer * m_outputParameters.channelCount);
+        }
 
         if (err != paNoError) {
             terminate(err);
@@ -76,6 +87,7 @@ void Portaudio::start() {
             terminate(err);
             return;
         }
+
         m_isPlaying = true;
         LOG << " --- Portaudio playing!";
     }
@@ -174,18 +186,11 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
         unique_lock<mutex> l(ctx->getStreamMtx());
 
         // if cycle m_buffer not filled, set samples to zero and init
-        if (ctx->m_cycleBuffer.empty()) {
+        if (ctx->useCycleBuf() && !ctx->m_cycleBuffer.empty() && ctx->getCycleBuffer().getFillAmt() != 0) {
+            auto readBuf = ctx->getCycleBuffer().consume();
+            memcpy(out, readBuf->getDataPtr(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+        } else {
             memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
-        } else if (ctx->useCycleBuf()) {
-            memcpy(out,
-                   ctx->getCycleBuffer().consume()->getDataPtr(),
-                   sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
-
-            // in case the feed was blocked, unblock it now
-            if (ctx->m_feedBlock && *ctx->m_feedBlock
-                && ctx->getCycleBuffer().getFreeSpace() >= ctx->m_feedMultiple+1) {
-                *ctx->m_feedBlock = false;
-            }
         }
     }
 
@@ -196,5 +201,14 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
     return 0;
 }
 
+void Portaudio::printInfo() {
+    LOG << "------------------------------------------------------";
+    LOG << "Number of channels: " << m_outputParameters.channelCount;
+    LOG << "SampleRate: " << m_sampleRate;
+    LOG << "Frames per buffer: " << m_framesPerBuffer;
+    LOG << "------------------------------------------------------";
 }
+
+}
+
 #endif

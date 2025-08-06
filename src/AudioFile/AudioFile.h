@@ -71,6 +71,7 @@ struct SampleParseData {
 class AudioFile {
 public:
     AudioFile();
+    virtual ~AudioFile() = default;
 
     /** Constructor, using a given file path to load a file */
     explicit AudioFile(const std::string &filePath, SampleOrder order=SampleOrder::Packed) { load (filePath, order); }
@@ -145,7 +146,7 @@ public:
     /** Sets whether the library should log error messages to the console. By default this is true */
     void shouldLogErrorsToConsole(bool logErrors) { m_logErrorsToConsole = logErrors; }
 
-    /** An optional iXML chunk that can be added to the AudioFile.*/
+    bool isLoaded() { return m_loaded; }
 
 protected:
   //  virtual bool encodeFile(std::vector<uint8_t> &fileData) = 0;
@@ -182,6 +183,7 @@ protected:
     SampleOrder         m_sampleOrder = SampleOrder::Packed;
     int                 m_bitDepth = 16;
     bool                m_logErrorsToConsole{true};
+    bool                m_loaded{false};
 
     int32_t     m_numBytesPerSample = 0;
     int32_t     m_numSamplesPerChannel = 0;

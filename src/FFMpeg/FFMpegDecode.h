@@ -56,12 +56,12 @@ public:
     static AVDictionary*                filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
     static int                          check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
 
-    void						        start(double time);
-    void 						        stop();
+    virtual void    			        start(double time);
+    virtual void 						stop();
     void 						        setPause(bool val) { m_pause = val; }
 
-    void 						        alloc_gl_res(AVPixelFormat _srcPixFmt);
-    static AVFrame*					    alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, std::vector< std::vector<uint8_t> >::iterator buf);
+    void 						        alloc_gl_res(AVPixelFormat srcPixFmt);
+    static AVFrame*					    alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
 
     void 						        singleThreadDecodeLoop();
     int 						        decode_video_packet(AVPacket* pPacket, AVCodecContext* pCodecContext);
@@ -79,7 +79,7 @@ public:
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
     inline double 						r2d(AVRational r) { return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den; }
 
-    void 						        seek_frame(int64_t _frame_number, double time);
+    void 						        seek_frame(int64_t frame_number, double time);
     inline void 						seek(double sec, double time) { seek_frame((int64_t) (sec * get_fps() + 0.5), time); }
     inline void						    resetToStart(double time) { seek(0.0, time); }
 
