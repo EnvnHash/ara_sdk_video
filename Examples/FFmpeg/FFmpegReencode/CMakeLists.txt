@@ -5,7 +5,7 @@ set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
 include(GeneralSettings)
 include(VisualStudioSettings)
 
-project(FFmpegEncode)
+project(FFmpegReencode)
 
 include_directories(
 	${ARA_AV_SOURCE_DIR}/src
@@ -18,9 +18,9 @@ add_executable(${PROJECT_NAME} ${SOURCES})
 include(GLBaseDependencies)
 include(GLBaseCopyDependencies)
 include(Gtk3Include)
-include(PugiXMLInclude)
 include(UtilitiesDependencies)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
+include(CMakeRC)
+include(ResCompInclude)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
 
@@ -32,14 +32,14 @@ if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
 endif()
 
 if (WIN32)
-	target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS}  Dwmapi.lib)
-else ()
-	target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS} )
+	list(APPEND TARGET_LIBS Dwmapi.lib)
 endif()
 
-if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
-	target_link_libraries(${PROJECT_NAME} resources)
-endif()
+target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS})
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/Assets/videos/trailer_1080p.mov ${CMAKE_CURRENT_BINARY_DIR}
+)
 
 INSTALL(TARGETS ${PROJECT_NAME}
 		DESTINATION ${CMAKE_CURRENT_BINARY_DIR} COMPONENT ${PROJECT_NAME} OPTIONAL)

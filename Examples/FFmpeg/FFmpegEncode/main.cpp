@@ -12,7 +12,7 @@
 #include <GeoPrimitives/Quad.h>
 
 using namespace std;
-using namespace ara::glb;
+using namespace ara;
 using namespace ara::av;
 
 bool			    printFps = true;
@@ -32,28 +32,22 @@ double              dt = 0.0;
 double              medDt = 0.0;
 int                 downIt=0;
 
-static void output_error(int error, const char* msg)
-{
+static void output_error(int error, const char* msg) {
 	fprintf(stderr, "Error: %s\n", msg);
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
+static void key_callback(GLFWwindow* win, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
+        glfwSetWindowShouldClose(win, GLFW_TRUE);
 	}
 }
 
-void init()
-{
+void init() {
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    quad = make_unique<Quad>(-1.f, -1.f, 2.f, 2.f,
-                             glm::vec3(0.f, 0.f, 1.f),
-                             1.f, 0.f, 0.f, 1.f,
-                             nullptr, 1, true);  // create a Quad, standard width and height (normalized into -1|1), static red
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{1.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
     std::string vert = STRINGIFY( layout(location = 0) in vec4 position;
           layout(location = 2) in vec2 texCoord;
@@ -83,21 +77,21 @@ void init()
 
     testPic = shCol.add("test_pic", vert, frag);
 
-    int bitRate = 1048576 *2; // 1 MBit = 1.048.576. ab 4 Mbit probleme bei rtmp streams auf windows
+    int bitRate = 1048576 *3; // 1 MBit = 1.048.576. ab 4 Mbit probleme bei rtmp streams auf windows
     encoder.setVideoBitRate(bitRate);
     //bool ret = encoder.init("rtmp://192.168.1.103/live/video_test", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
     //bool ret = encoder.init("rtmp://unstumm.com/live/realsense", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
     bool ret = encoder.init("video_test.mp4", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
-    if (ret)
+    if (ret) {
         encoder.record();
-    else
+    } else {
         LOGE << "Could not init encoder";
+    }
 }
 
-static void display()
-{
+static void display() {
     // assumes 60hz loop
-    if (!inited){
+    if (!inited) {
         init();
         inited = true;
     }
@@ -109,42 +103,42 @@ static void display()
         actTime = glfwGetTime();
 
         // check Framerate every 2 seconds
-        if (printFps)
-        {
+        if (printFps) {
             double newTimeFmod = std::fmod(glfwGetTime(), 2.0);
-            if (newTimeFmod < timeFmod)
-            {
-                if (!medDt) medDt = dt;
+            if (newTimeFmod < timeFmod) {
+                if (!medDt) {
+                    medDt = dt;
+                }
                 medDt = (medDt * 20.0 + dt) / 21.0;
-               // std::cout <<  "raw dt: " << dt << " dt: " << medDt << " fps: " <<  (1.0 / medDt) << std::endl;
+               LOG <<  "raw dt: " << dt << " dt: " << medDt << " fps: " <<  (1.0 / medDt);
             }
             timeFmod = newTimeFmod;
         }
-
     }
 
-    downIt++;
+    ++downIt;
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     testPic->begin();
-    testPic->setUniform1f("time", (float)animCntr++ * 0.1f);
+    testPic->setUniform1f("time", static_cast<float>(animCntr++) * 0.1f);
     testPic->setIdentMatrix4fv("m_pvm");
 
     quad->draw();
 
 	glfwSwapBuffers(window);
 
-    if (animCntr % 2 == 0)
+    if (animCntr % 2 == 0) {
         encoder.downloadGlFbToVideoFrame(30.0);
+    }
 }
 
-int main(int argc, char** argv)
-{
+int main(int argc, char** argv) {
     glfwSetErrorCallback(output_error);
 
-	if (!glfwInit())
-		LOGE << "Failed to initialize GLFW";
+	if (!glfwInit()) {
+        LOGE << "Failed to initialize GLFW";
+    }
 
  	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwWindowHint(GLFW_DECORATED, GL_TRUE);
@@ -176,12 +170,10 @@ int main(int argc, char** argv)
 	LOG << "Version:  " << glGetString(GL_VERSION);
 	LOG << "GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION);
 
-    ara::glb::initGLEW();
-
+    ara::initGLEW();
     glViewport(0, 0, winWidth, winHeight);
 
-    while (!glfwWindowShouldClose(window))
-	{
+    while (!glfwWindowShouldClose(window)) {
 		display();
         glfwPollEvents();
     }

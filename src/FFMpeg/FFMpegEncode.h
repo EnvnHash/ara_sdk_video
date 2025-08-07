@@ -6,10 +6,6 @@
 
 #ifdef ARA_USE_FFMPEG
 
-#if defined(ARA_USE_LIBRTMP) && (_WIN32)
-#include <Network/rtmp/RTMPSender.h>
-#endif
-
 #include <FFMpeg/FFMpegCommon.h>
 #include <StopWatch.h>
 #include <libyuv.h>

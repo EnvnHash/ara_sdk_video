@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
 set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_CXX_STANDARD 17)
 
 include(GeneralSettings)
 include(VisualStudioSettings)
@@ -10,10 +8,7 @@ include(VisualStudioSettings)
 project(FFmpegCameraInput)
 
 include_directories(
-	${CMAKE_SOURCE_DIR}/Libraries/GLBase/src
-	${CMAKE_SOURCE_DIR}/Libraries/VideoInput/src
-	${CMAKE_SOURCE_DIR}/Libraries/Utilities/src
-	${ARA_SDK_SOURCE_DIR}/Libraries/third_party/nameof
+		${ARA_AV_SOURCE_DIR}/src
 )
 
 set(SOURCES main.cpp)
@@ -27,11 +22,13 @@ include(PugiXMLInclude)
 include(UtilitiesDependencies)
 include(CMakeRC)
 include(OpenCV)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
 
+set(TARGET_LIBS ${ARA_SDK_TARGET_LINK_LIBS})
 
-set(TARGET_LIBS GLBase GLSceneGraph VideoInput Utilities)
+list(APPEND TARGET_LIBS GLBase SceneGraph AudioVideo Utilities)
 if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
 	list(APPEND TARGET_LIBS resources)
 endif()

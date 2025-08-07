@@ -21,6 +21,7 @@ include(Gtk3Include)
 include(UtilitiesDependencies)
 include(CMakeRC)
 include(ResCompInclude)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
 
