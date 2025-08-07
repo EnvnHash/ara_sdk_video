@@ -19,11 +19,13 @@ public:
     int                     OpenFile(GLBase* glbase, const std::string& filePath, int destWidth, int destHeight);
     void					start(double time) override;
     void 					stop() override;
-    void                    recv_audio_packet(audioCbData& data);
+    void                    recvAudioPacket(audioCbData& data);
+    int32_t                 getAudioWriteBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getWritePos() : 0; }
+    int32_t                 getAudioReadBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getReadPos() : 0; }
 
 private:
     Portaudio               m_paudio;
-    uint32_t               	m_cycBufSize=256; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
+    uint32_t               	m_cycBufSize = 128; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
     size_t               	m_bufSizeFact{};
 };
 }

@@ -45,7 +45,7 @@ public :
     virtual void pause();
     virtual void resume();
 
-    static bool isNrOutChanSupported(int destNrChannels);
+    bool isNrOutChanSupported(int destNrChannels);
     bool isSampleRateSupported(double destSampleRate);
     static int getMaxNrOutChannels();
     static int getValidOutSampleRate(int destSampleRate);
@@ -69,6 +69,7 @@ public :
     [[nodiscard]] bool isRunning() const         { return m_isPlaying; }
     [[nodiscard]] int getFramesPerBuffer() const { return m_framesPerBuffer; }
     [[nodiscard]] int getNrOutChannels() const   { return m_outputParameters.channelCount; }
+    int32_t getSampleRate()                      { return m_sampleRate; }
     auto& getCycleBuffer()     { return m_cycleBuffer; }
     auto& getStreamMtx()              { return m_streamMtx; }
     auto& getStreamProcCb()      { return m_streamProcCb; }
@@ -77,8 +78,6 @@ public :
     void setSampleRate(int rate)                { m_sampleRate = rate; }
     void setFramesPerBuffer(int nrFrames)       { m_framesPerBuffer = nrFrames; }
     void setNrOutputChannel(int nrChan)         { m_outputParameters.channelCount = nrChan; }
-    void setFeedBlock(std::atomic<bool>* bl)    { m_feedBlock = bl; }
-    void setFeedBlockMultiple(size_t mltpl)     { m_feedMultiple = mltpl; }
     void setUseCycleBuf(bool val)               { m_useCycleBuf = val; }
 
     void setStreamProcCb(const std::function<void(const void*, void*, uint64_t)>& f) { m_streamProcCb = f; }
@@ -93,12 +92,10 @@ protected:
     bool                    m_isPlaying = false;
     bool                    m_useCycleBuf = true;
     PaInitPar               m_initPar;
-    size_t                  m_feedMultiple = 1;
     std::mutex              m_streamMtx;
     PaStreamParameters      m_inputParameters{0};
     PaStreamParameters      m_outputParameters{0};
     CycleBuffer<float>      m_cycleBuffer;  /// interleaved sample order, must be a multiple of framesPerBuffer * numChannels
-    std::atomic<bool>*      m_feedBlock=nullptr;
 
     std::function<void(const void*, void*, uint64_t)>   m_streamProcCb;
 };

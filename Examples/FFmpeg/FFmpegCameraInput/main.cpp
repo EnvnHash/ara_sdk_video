@@ -57,7 +57,7 @@ void init()
 #ifdef _WIN32
     decoder.OpenCamera(&glbase, "Logi C270 HD WebCam", winWidth, winHeight, false);
 #elif __linux__
-    decoder.OpenCamera(&glbase, "/dev/video0", winWidth, winHeight, false);
+    decoder.openCamera(&glbase, "/dev/video0", winWidth, winHeight, false);
 #endif
 
     decoder.start(glfwGetTime());

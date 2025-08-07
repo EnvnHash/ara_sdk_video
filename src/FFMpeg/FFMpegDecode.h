@@ -36,8 +36,8 @@ namespace ara::av {
 
 class FFMpegDecode {
 public:
-    int							        hw_decoder_init(AVCodecContext* ctx, enum AVHWDeviceType type);
-    int							        OpenFile(GLBase* glbase, const std::string& filePath, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, const std::function<void()>& cb=nullptr);
+    int							        hwDecoderInit(AVCodecContext* ctx, const enum AVHWDeviceType type);
+    int							        openFile(GLBase* glbase, const std::string& filePath, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, const std::function<void()>& initCb=nullptr);
 #ifdef __ANDROID__
     int							        OpenAndroidAsset(glb::GLBase* glbase, struct android_app* app, std::string& assetName, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, std::function<void()> cb=nullptr);
     int                                 initMediaCode(AAsset* assetDescriptor);
@@ -47,40 +47,41 @@ public:
     uint8_t*                            mediaCodecGetOutputBuffer(int status, size_t& size);
     void                                mediaCodecReleaseOutputBuffer(int status);
 #endif
-    static int                          read_packet_from_inbuf(void *opaque, uint8_t *buf, int buf_size);
+    static int                          readPacketFromInbuf(void *opaque, uint8_t *buf, int buf_size);
 
-    int							        OpenCamera(GLBase* glbase, const std::string& camName, int destWidth, int destHeight, bool decodeYuv420OnGpu=true);
+    int							        openCamera(GLBase* glbase, const std::string& camName, int destWidth, int destHeight, bool decodeYuv420OnGpu=true);
     int                                 setupStreams(const AVInputFormat* format, AVDictionary** options, const std::function<void()>& initCb);
     int                                 allocateResources();
-    static AVDictionary**               setup_find_stream_info_opts(AVFormatContext *s, AVDictionary *codec_opts);
-    static AVDictionary*                filter_codec_opts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
-    static int                          check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
+    static AVDictionary**               setupFindStreamInfoOpts(AVFormatContext *s, AVDictionary *codec_opts);
+    static AVDictionary*                filterCodecOpts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
+    static int                          checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec);
 
     virtual void    			        start(double time);
     virtual void 						stop();
     void 						        setPause(bool val) { m_pause = val; }
 
-    void 						        alloc_gl_res(AVPixelFormat srcPixFmt);
-    static AVFrame*					    alloc_picture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
+    void 						        allocGlRes(AVPixelFormat srcPixFmt);
+    static AVFrame*					    allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
 
     void 						        singleThreadDecodeLoop();
-    int 						        decode_video_packet(AVPacket* pPacket, AVCodecContext* pCodecContext);
-    int 						        decode_audio_packet(AVPacket* pPacket, AVCodecContext* pCodecContext);
+    int 						        decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
+    int 						        decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
 
     // 2 thread implementation of sending/receiving decoded frames, .... not much faster than the "while" variant
     //void 						        sendFrameLoop();
     //int 						        receiveFrameLoop();
 
-    double  					        get_duration_sec();
-    double 						        get_fps();
-    int64_t 					        get_total_frames();
+    double  					        getDurationSec();
+    double 						        getFps();
+    int64_t 					        getTotalFrames();
     static void                         dumpEncoders();
     static void                         dumpDecoders();
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
     inline double 						r2d(AVRational r) { return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den; }
 
-    void 						        seek_frame(int64_t frame_number, double time);
-    inline void 						seek(double sec, double time) { seek_frame((int64_t) (sec * get_fps() + 0.5), time); }
+    void 						        seekFrame(int64_t frame_number, double time);
+    inline void 						seek(double sec, double time) {
+        seekFrame((int64_t) (sec * getFps() + 0.5), time); }
     inline void						    resetToStart(double time) { seek(0.0, time); }
 
     uint8_t*                            reqNextBuf();
@@ -126,7 +127,7 @@ public:
     int                                 getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
     int                                 getDecFramePtr() { return m_decFramePtr; }
     int                                 getUplFramePtr() { return m_frameToUpload; }
-    std::atomic<bool>*                  getAudioQueueBlock() { return &m_audioQueueFull; }
+   // std::atomic<bool>*                  getAudioQueueBlock() { return &m_audioQueueFull; }
     int                                 getFrameRateD() { return m_formatContext->streams[m_video_stream_index]->r_frame_rate.den; }
     int                                 getFrameRateN() { return m_formatContext->streams[m_video_stream_index]->r_frame_rate.num; }
 
@@ -210,7 +211,7 @@ protected:
     bool						        m_gotFirstVideoFrame =false;
     bool						        m_gotFirstAudioFrame =false;
 
-    std::atomic<bool>			        m_audioQueueFull =false;
+    //std::atomic<bool>			        m_audioQueueFull =false;
 
     int							        m_logLevel=AV_LOG_INFO;
     int 						        m_video_stream_index=0;
@@ -220,10 +221,10 @@ protected:
     int 						        m_forceNrChannels=0;
     int 				                m_forceSampleRate=0;
     int 						        m_dstSampleRate=0;
-    int 						        m_dst_nb_samples=0;
+    int 						        m_dstNumSamples=0;
     int 						        m_max_dst_nb_samples=0;
     int 						        m_dst_audio_nb_channels=0;
-    int 						        m_dst_audio_linesize=0;
+    int 						        m_dstAudioLineSize=0;
 
     int                                 m_scan_all_pmts_set = 0;
     int                                 m_seek_by_bytes = -1;

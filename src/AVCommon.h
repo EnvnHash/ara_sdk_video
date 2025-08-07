@@ -13,7 +13,6 @@ public:
     uint32_t nChannels=0;
     uint32_t samples=0;
     uint32_t byteSize=0;
-    //float** buffer=nullptr;
     uint8_t** buffer=nullptr;
     uint32_t sampleRate=0;
     int32_t sampleFmt=0;

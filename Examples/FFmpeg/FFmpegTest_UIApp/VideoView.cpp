@@ -64,10 +64,10 @@ bool VideoView::drawFunc(uint32_t& objId) {
         else
             decoder->OpenFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), false, true);
 #else
-        decoder->OpenFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), true, true);
+        decoder->openFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), true, true);
 #endif
 
-        // decoder->OpenCamera(m_glbase, "/dev/video0", 720, 1280, false);
+        // decoder->openCamera(m_glbase, "/dev/video0", 720, 1280, false);
         decoder->start(0.0);
 
         m_running = true;

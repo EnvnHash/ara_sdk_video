@@ -112,7 +112,7 @@ void Portaudio::resume() {
 bool Portaudio::isNrOutChanSupported(int destNrChannels) {
     if (Pa_GetDefaultOutputDevice() > -1) {
         const PaDeviceInfo* outDevInfo =  Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice());
-        if (outDevInfo && destNrChannels <= outDevInfo->maxOutputChannels) {
+        if (outDevInfo && destNrChannels <= m_numChannels) {
             return true;
         }
     }
@@ -120,7 +120,7 @@ bool Portaudio::isNrOutChanSupported(int destNrChannels) {
 }
 
 bool Portaudio::isSampleRateSupported(double destSampleRate) {
-    auto err = Pa_IsFormatSupported( nullptr, &m_outputParameters, destSampleRate );
+    auto err = Pa_IsFormatSupported(nullptr, &m_outputParameters, destSampleRate);
     return err == paFormatIsSupported;
 }
 
@@ -182,16 +182,12 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
     auto ctx = reinterpret_cast<Portaudio*>(userData);
     auto out = reinterpret_cast<float*>(outputBuffer);
 
-    {
-        unique_lock<mutex> l(ctx->getStreamMtx());
-
-        // if cycle m_buffer not filled, set samples to zero and init
-        if (ctx->useCycleBuf() && !ctx->m_cycleBuffer.empty() && ctx->getCycleBuffer().getFillAmt() != 0) {
-            auto readBuf = ctx->getCycleBuffer().consume();
-            memcpy(out, readBuf->getDataPtr(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
-        } else {
-            memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
-        }
+    // if cycle m_buffer not filled, set samples to zero and init
+    if (ctx->useCycleBuf() && !ctx->m_cycleBuffer.empty() && ctx->getCycleBuffer().getFillAmt() != 0) {
+        auto readBuf = ctx->getCycleBuffer().consume();
+        memcpy(out, readBuf->getDataPtr(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+    } else {
+        memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
     }
 
     if (ctx->getStreamProcCb()) {

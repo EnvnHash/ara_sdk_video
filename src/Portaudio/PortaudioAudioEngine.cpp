@@ -63,7 +63,7 @@ void PortaudioAudioEngine::addSampleAtPos(Sample& samp) {
 int32_t PortaudioAudioEngine::getActFrameBufPos() {
     auto diff = duration_cast<chrono::nanoseconds>((chrono::system_clock::now() - m_paStartTime)).count();
     auto frameDur = static_cast<int64_t>(1000000000.0 / static_cast<double>(m_sampleRate)) * m_framesPerBuffer;
-    return diff % frameDur;
+    return static_cast<int32_t>(diff % frameDur);
 }
 
 }

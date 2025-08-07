@@ -930,7 +930,7 @@ AVFrame* FFMpegEncode::alloc_picture(enum AVPixelFormat pix_fmt, int width, int 
     /* allocate the buffers for the frame data */
     ret = av_frame_get_buffer(picture, 32);
     if (ret < 0) {
-        LOGE << "FFMpegEncode::alloc_picture ERROR: Could not allocate frame data.";
+        LOGE << "FFMpegEncode::allocPicture ERROR: Could not allocate frame data.";
         exit(1);
     }
 
