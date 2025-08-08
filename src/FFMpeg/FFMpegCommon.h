@@ -41,7 +41,6 @@ extern "C"{
 #include <libavutil/parseutils.h>
 #include <libavutil/avstring.h>
 #include <libavutil/intreadwrite.h>
-#include "get_bits.h"
 
 #ifndef AV_PKT_FLAG_KEY
 #define AV_PKT_FLAG_KEY PKT_FLAG_KEY
