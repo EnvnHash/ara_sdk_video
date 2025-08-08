@@ -194,11 +194,11 @@ int32_t FFMpegDecode::checkReceiveFrame(AVCodecContext* codecContext) {
 void FFMpegDecode::transferFromHwToCpu() {
     size_t hwBufSize;
     auto buffer = mediaCodecGetOutputBuffer(response, hwBufSize);
-    memcpy(&m_framePtr[m_decFramePtr]->data[0][0], buffer, m_rawBuffer[m_decFramePtr].size());
+    memcpy(&m_frames[m_decFramePtr]->data[0][0], buffer, m_rawBuffer[m_decFramePtr].size());
 
-    m_framePtr[m_decFramePtr]->pts = m_mediaCodecInfo.presentationTimeUs * av_q2d(m_formatContext->streams[m_videoStreamIndex]->time_base) * 1000;
-    m_framePtr[m_decFramePtr]->pkt_size = packet->size;
-    m_framePtr[m_decFramePtr]->format = (AVPixelFormat) codecContext->pix_fmt;
+    m_frames[m_decFramePtr]->pts = m_mediaCodecInfo.presentationTimeUs * av_q2d(m_formatContext->streams[m_videoStreamIndex]->time_base) * 1000;
+    m_frames[m_decFramePtr]->pkt_size = packet->size;
+    m_frames[m_decFramePtr]->format = (AVPixelFormat) codecContext->pix_fmt;
 
     mediaCodecReleaseOutputBuffer(response);
 }

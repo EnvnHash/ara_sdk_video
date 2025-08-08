@@ -25,18 +25,16 @@ void FFMpegDecode::openFile(const ffmpeg::DecodePar& p) {
         }
         allocFormatContext();
         checkForNetworkSrc(m_par);
+        setupStreams(nullptr, &m_formatOpts, m_par);
 
         if (p.startDecodeThread) {
             m_decodeThread = std::thread([this]{
                 m_startTime = 0.0;
                 m_run = true;
-                setupStreams(nullptr, &m_formatOpts, m_par);
                 allocateResources(m_par);
                 singleThreadDecodeLoop();
             });
             m_decodeThread.detach();
-        } else {
-            setupStreams(nullptr, &m_formatOpts, m_par);
         }
     } catch (std::runtime_error& e) {
         LOGE << "FFmpeg::openFile Error: " << e.what();
@@ -154,8 +152,8 @@ void FFMpegDecode::setDefaultHwDevice() {
 }
 
 bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, ffmpeg::DecodePar& p) {
-    int err, ret;
-    if ((err = avformat_open_input(&m_formatContext, !p.filePath.empty() ? p.filePath.c_str() : nullptr, format, options) != 0)) {
+    int err=0;
+    if ((err = avformat_open_input(&m_formatContext, !p.filePath.empty() ? p.filePath.c_str() : nullptr, format, options)) != 0) {
         throw runtime_error("ERROR could not open the file "+p.filePath+" "+err2str(err));
     }
     if (m_scanAllPmtsSet) {
@@ -358,25 +356,22 @@ void FFMpegDecode::allocateResources(ffmpeg::DecodePar& p) {
     }
 
     if (p.destWidth && p.destHeight) {
-        m_framePtr = std::vector<AVFrame*>(m_videoFrameBufferSize);
-        for (auto &it : m_framePtr) {
-            it = av_frame_alloc();
-            it->width = p.destWidth;
-            it->height = p.destHeight;
-            it->pts = -1;
-            if (!it) {
+        m_frames.allocateBuffers(m_videoFrameBufferSize, 1);
+        for (auto& it : m_frames.getBuffer()) {
+            it.frame = av_frame_alloc();
+            it.frame->width = p.destWidth;
+            it.frame->height = p.destHeight;
+            it.frame->pts = -1;
+            if (it.frame == nullptr) {
                 throw runtime_error("failed to allocated memory for AVFrame");
             }
+            it.ptss = -1.0;
         }
     }
 
     m_frame = av_frame_alloc();
     m_audioFrame = av_frame_alloc();
-
-    m_ptss = std::vector<double>(m_videoFrameBufferSize);
-    std::fill(m_ptss.begin(), m_ptss.end(), -1.0);
-
-    m_totNumFrames = static_cast<uint>(getTotalFrames());
+    m_totNumFrames = static_cast<uint32_t>(getTotalFrames());
     m_resourcesAllocated = true;
 }
 
@@ -398,8 +393,7 @@ void FFMpegDecode::stop() {
     }
 }
 
-AVFrame *FFMpegDecode::allocPicture(enum AVPixelFormat pix_fmt, int width, int height,
-                                    std::vector<std::vector<uint8_t>>::iterator buf) {
+AVFrame *FFMpegDecode::allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>& buf) {
     auto picture = av_frame_alloc();
     if (!picture) {
         return nullptr;
@@ -411,10 +405,10 @@ AVFrame *FFMpegDecode::allocPicture(enum AVPixelFormat pix_fmt, int width, int h
     picture->pts = -1;
 
     // Allocate memory for the raw data we get when converting.
-    *buf = vector<uint8_t>( av_image_get_buffer_size(pix_fmt, width, height, 1) );
+    buf.resize(av_image_get_buffer_size(pix_fmt, width, height, 1));
 
     // Assign appropriate parts of buffer to image planes in m_inpFrame
-    av_image_fill_arrays(picture->data, picture->linesize, &(*buf)[0], pix_fmt, width, height, 1);
+    av_image_fill_arrays(picture->data, picture->linesize, buf.data(), pix_fmt, width, height, 1);
     return picture;
 }
 
@@ -464,23 +458,14 @@ void FFMpegDecode::singleThreadDecodeLoop() {
     // decode packet
     while (m_run) {
         if (m_formatContext && m_packet && !m_pause) {
-            // in case the queue is filled, don't read more frames
-            if ((m_videoStreamIndex > -1
-                 && static_cast<int32_t>(m_nrBufferedFrames) >= static_cast<int32_t>(m_videoFrameBufferSize))) {
-                this_thread::sleep_for(500us);
-                continue;
-            }
-
             if (av_read_frame(m_formatContext, m_packet) < 0) {
                 continue;
             }
 
             // if it's the video stream and the m_buffer queue is not filled
             if (m_packet->stream_index == m_videoStreamIndex) {
-                // we are using multiple frames, so the frames reaching here are not
-                // in a continuous order!!!!!!
+                // we are using multiple frames, so the frames reaching here are not in a continuous order!!!!!!
                 m_actFrameNr = static_cast<uint32_t>(static_cast<double>(m_packet->pts) * m_timeBaseDiv / m_frameDur);
-
                 if ((m_totNumFrames - 1) == m_actFrameNr && m_loop && !m_isStream) {
                     av_seek_frame(m_formatContext, m_videoStreamIndex, 0, AVSEEK_FLAG_BACKWARD);
                 }
@@ -488,8 +473,7 @@ void FFMpegDecode::singleThreadDecodeLoop() {
                 if (decodeVideoPacket(m_packet, m_videoCodecCtx) < 0) {
                     continue;
                 }
-            } else if (m_packet->stream_index == m_audioStreamIndex
-                       && decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
+            } else if (m_packet->stream_index == m_audioStreamIndex && decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
                 continue;
             }
 
@@ -517,6 +501,11 @@ int32_t FFMpegDecode::decodeVideoPacket(AVPacket* packet, AVCodecContext* codecC
             }
 
             if (m_run && response >= 0) {
+                // in case the queue is filled, don't read more frames
+                while (m_frames.getFreeSpace() == 0) {
+                    this_thread::sleep_for(500us);
+                    continue;
+                }
                 response = parseReceivedFrame(codecContext);
             }
         }
@@ -534,7 +523,7 @@ int32_t FFMpegDecode::checkReceiveFrame(AVCodecContext* codecContext) {
         response = avcodec_receive_frame(codecContext, m_frame);            // always calls av_frame_unref
     } else {
         m_mutex.lock();
-        response = avcodec_receive_frame(codecContext, m_framePtr[m_decFramePtr]);    // always calls av_frame_unref
+        response = avcodec_receive_frame(codecContext, m_frames.getWriteBuff().frame);    // always calls av_frame_unref
         m_mutex.unlock();
     }
     return response;
@@ -546,7 +535,7 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
     // convert frame to desired size and m_format
     if (m_par.useHwAccel && m_frame->format == m_hwPixFmt) {
         transferFromHwToCpu();
-        m_srcPixFmt = static_cast<AVPixelFormat>(m_framePtr[m_decFramePtr]->format);
+        m_srcPixFmt = static_cast<AVPixelFormat>(m_frames.getWriteBuff().frame->format);
     }
 
     if (!m_par.decodeYuv420OnGpu) {
@@ -557,16 +546,16 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
         }
 
         if (m_decodeCb) {
-            m_decodeCb(m_bgraFrame[m_decFramePtr]->data[0]);
+            m_decodeCb(m_bgraFrame.getWriteBuff().frame->data[0]);
         }
     } else if (!m_par.useHwAccel) {
-        m_srcPixFmt = (AVPixelFormat) codecContext->pix_fmt;
+        m_srcPixFmt = codecContext->pix_fmt;
     }
 
     m_mutex.unlock();
 
     if (m_videoCb) {
-        m_videoCb(m_framePtr[m_decFramePtr]);
+        m_videoCb(m_frames.getWriteBuff().frame);
     }
 
     incrementCounters();
@@ -574,21 +563,19 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
 }
 
 void FFMpegDecode::incrementCounters() {
-    m_mutex.lock();
-
-    m_ptss[m_decFramePtr] = m_timeBaseDiv * (double) m_framePtr[m_decFramePtr]->pts;
+    m_frames.getWriteBuff().ptss = m_timeBaseDiv * m_frames.getWriteBuff().frame->pts;
 
     // the stream might start with a pts different from 0, for this reason here register explicitly the starting pts
-    if (m_nrBufferedFrames == 0) {
-        m_videoStartPts = m_par.useHwAccel ? m_frame->pts : m_framePtr[m_decFramePtr]->pts;
+    if (m_frames.getFillAmt() == 0) {
+        m_videoStartPts = m_par.useHwAccel ? m_frame->pts : m_frames.getWriteBuff().frame->pts;
     }
 
     // call end callback if we are done
-    if (m_endCb && m_ptss[m_decFramePtr] < m_lastPtss && m_lastPtss > 0) {
+    if (m_endCb && m_frames.getWriteBuff().ptss < m_lastPtss && m_lastPtss > 0) {
         m_endCb();
     }
 
-    m_lastPtss = m_ptss[m_decFramePtr];
+    m_lastPtss = m_frames.getWriteBuff().ptss;
 
     if (!m_gotFirstVideoFrame) {
         m_gotFirstVideoFrame = true;
@@ -597,38 +584,35 @@ void FFMpegDecode::incrementCounters() {
         }
     }
 
-    m_nrBufferedFrames++;
-
-    m_decFramePtr = ++m_decFramePtr % m_videoFrameBufferSize;
-    m_mutex.unlock();
+    m_frames.feedCountUp();
 }
 
 void FFMpegDecode::transferFromHwToCpu() {
     // retrieve data from GPU to CPU, dst m_frame must be "clean"
-    if (av_hwframe_transfer_data(m_framePtr[m_decFramePtr], m_frame, 0) < 0) {
+    if (av_hwframe_transfer_data(m_frames.getWriteBuff().frame, m_frame, 0) < 0) {
         LOGE << "Error transferring the data to system memory";
     }
 
-    m_framePtr[m_decFramePtr]->pts = m_frame->pts;
-    m_framePtr[m_decFramePtr]->pkt_size = m_frame->pkt_size;
-    m_framePtr[m_decFramePtr]->coded_picture_number = m_frame->coded_picture_number;
-    m_framePtr[m_decFramePtr]->pict_type = m_frame->pict_type;
+    m_frames.getWriteBuff().frame->pts = m_frame->pts;
+    m_frames.getWriteBuff().frame->pkt_size = m_frame->pkt_size;
+    m_frames.getWriteBuff().frame->coded_picture_number = m_frame->coded_picture_number;
+    m_frames.getWriteBuff().frame->pict_type = m_frame->pict_type;
 }
 
 int32_t FFMpegDecode::convertFrameToCpuFormat(AVCodecContext* codecContext) {
     if (!m_imgConvertCtx) {
         m_imgConvertCtx = sws_getCachedContext(m_imgConvertCtx,
                                                codecContext->width, codecContext->height,
-                                               (AVPixelFormat) m_framePtr[m_decFramePtr]->format,
+                                               (AVPixelFormat) m_frames.getWriteBuff().frame->format,
                                                m_par.destWidth, m_par.destHeight, m_destPixFmt,
                                                SWS_FAST_BILINEAR, //SWS_BICUBIC,
                                                  nullptr, nullptr, nullptr);
     }
 
     return sws_scale(m_imgConvertCtx,
-                     m_framePtr[m_decFramePtr]->data, m_framePtr[m_decFramePtr]->linesize, 0,
+                     m_frames.getWriteBuff().frame->data, m_frames.getWriteBuff().frame->linesize, 0,
                      codecContext->height,
-                     m_bgraFrame[m_decFramePtr]->data, m_bgraFrame[m_decFramePtr]->linesize);
+                     m_bgraFrame.getWriteBuff().frame->data, m_bgraFrame.getWriteBuff().frame->linesize);
 }
 
 int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecContext) {
@@ -663,7 +647,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
             if (m_useAudioConversion) {
                 // init the destination buffer if necessary
                 if (!m_dstSampleBuffer) {
-                    m_maxDstNumSamples = m_dstNumSamples = (int) av_rescale_rnd(m_audioFrame->nb_samples, m_dstSampleRate,
+                    m_dstNumSamples = (int) av_rescale_rnd(m_audioFrame->nb_samples, m_dstSampleRate,
                                                                                 m_audioCodecCtx->sample_rate, AV_ROUND_UP);
 
                     // buffer is going to be directly written to a rawaudio file, no alignment
@@ -729,20 +713,20 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
     return 0;
 }
 
-uint8_t* FFMpegDecode::reqNextBuf() {
+/*uint8_t* FFMpegDecode::reqNextBuf() {
     uint8_t* buf=nullptr;
 
-    if (m_resourcesAllocated && m_run && m_nrBufferedFrames >= 1) {
+    if (m_resourcesAllocated && m_run && m_frames.getFillAmt() > 0) {
         ++m_frameToUpload %= m_videoFrameBufferSize;
 
         if (m_frameToUpload > -1
-            && m_bgraFrame[m_frameToUpload]->width
-            && m_bgraFrame[m_frameToUpload]->height
-            && m_bgraFrame[m_frameToUpload]->data[0]) {
-            buf = m_bgraFrame[m_frameToUpload]->data[0];
+            && m_bgraFrame.getReadBuff().frame->width
+            && m_bgraFrame.getReadBuff().frame->height
+            && m_bgraFrame.getReadBuff().frame->data[0]) {
+            buf = m_bgraFrame.getReadBuff().frame->data[0];
 
             // mark as consumed
-            m_framePtr[m_frameToUpload]->pts = -1;
+            m_frames.getReadBuff().frame->pts = -1;
 
             if (m_nrBufferedFrames > 0) {
                 --m_nrBufferedFrames;
@@ -753,7 +737,7 @@ uint8_t* FFMpegDecode::reqNextBuf() {
     }
 
     return buf;
-}
+}*/
 
 void FFMpegDecode::seekFrame(int64_t frame_number, double time) {
      // Seek to the keyframe at timestamp.
@@ -853,11 +837,11 @@ void FFMpegDecode::clearResources() {
         m_audioSwrCtx = nullptr;
     }
 
-    for (auto &it : m_framePtr) {
-        av_frame_free(&it);
+    for (auto &it : m_frames.getBuffer()) {
+        av_frame_free(&it.frame);
     }
 
-    m_framePtr.clear();
+    m_frames.clear();
 
     if (m_frame) {
         av_frame_unref(m_frame);
@@ -872,9 +856,8 @@ void FFMpegDecode::clearResources() {
     }
 
     if (!m_par.decodeYuv420OnGpu) {
-        m_buffer.clear();
-        for (auto &it : m_bgraFrame) {
-            av_frame_free(&it);
+        for (auto &it : m_bgraFrame.getBuffer()) {
+            av_frame_free(&it.frame);
         }
         m_bgraFrame.clear();
     }
@@ -883,8 +866,6 @@ void FFMpegDecode::clearResources() {
         av_packet_free(&m_packet);
         m_packet = nullptr;
     }
-
-    m_ptss.clear();
 
     if (m_hwDeviceCtx){
         av_buffer_unref(&m_hwDeviceCtx);

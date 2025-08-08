@@ -14,22 +14,7 @@
 #include <Conditional.h>
 #include <AVCommon.h>
 #include <Log.h>
-
-#ifdef __ANDROID__
-#include <android/asset_manager.h>
-#include <android_native_app_glue.h>
-#include <media/NdkMediaCodec.h>
-#include <media/NdkMediaExtractor.h>
-#endif
-
-
-#ifndef ARA_USE_GLBASE
-namespace ara::glb {
-    class GLBase;
-}
-#else
-#include <GLBase.h>
-#endif
+#include <CycleBuffer.h>
 
 namespace ara::av {
 
@@ -69,12 +54,12 @@ public:
     double  					        getDurationSec();
     double 						        getFps();
     int64_t 					        getTotalFrames();
-    [[nodiscard]] inline enum AVPixelFormat getSrcPixFmt() const { return m_srcPixFmt; }
-    [[nodiscard]] inline int            getNrBufferedFrames() const { return (int)m_nrBufferedFrames; }
+    [[nodiscard]] enum AVPixelFormat    getSrcPixFmt() const { return m_srcPixFmt; }
+    [[nodiscard]] int                   getNrBufferedFrames() { return m_frames.getFillAmt(); }
     int                                 getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
     int                                 getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
-    int                                 getDecFramePtr() { return m_decFramePtr; }
-    int                                 getUplFramePtr() { return m_frameToUpload; }
+    int                                 getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
+    int                                 getReadFramePtr() { return m_frames.getReadPos(); }
     int                                 getFrameRateD() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.den; }
     int                                 getFrameRateN() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.num; }
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
@@ -94,8 +79,8 @@ protected:
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    allocateResources(ffmpeg::DecodePar& p);
 
-    static AVFrame*	allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
-    uint8_t*        reqNextBuf();
+    static AVFrame*	allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>& buf);
+    //uint8_t*        reqNextBuf();
 
     void 			singleThreadDecodeLoop();
     int 			decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
@@ -117,18 +102,16 @@ protected:
 
     AVFrame*					        m_frame = nullptr;
     AVFrame*					        m_audioFrame = nullptr;
-    std::vector<AVFrame*>		        m_framePtr;
-    std::vector<AVFrame*>		        m_bgraFrame;
+    CycleBuffer<ffmpeg::TimedFrame>     m_frames;
+    CycleBuffer<ffmpeg::TimedPicture>   m_bgraFrame;
     AVPacket*					        m_packet=nullptr;
     struct SwsContext*			        m_imgConvertCtx=nullptr;
-    int                                 m_decFramePtr=0;
 
     enum AVHWDeviceType 		        m_hwDeviceType{};
     AVBufferRef*				        m_hwDeviceCtx = nullptr;
     int64_t                             m_dstChannelLayout=0;
     enum AVSampleFormat                 m_dstSampleFmt{};
     struct SwrContext*                  m_audioSwrCtx=nullptr;
-
 
     const char*                         m_videoCodecName = nullptr;
     std::string                         m_defaultHwDevType;
@@ -166,7 +149,6 @@ protected:
     int 						        m_audioNumChannels=0;
     int 						        m_dstSampleRate=0;
     int 						        m_dstNumSamples=0;
-    int 						        m_maxDstNumSamples=0;
     int 						        m_dstAudioNumChannels=0;
     int 						        m_dstAudioLineSize=0;
     int                                 m_scanAllPmtsSet = 0;
@@ -183,13 +165,11 @@ protected:
     int64_t                             m_start_time = AV_NOPTS_VALUE;
 
     unsigned int				        m_nrTexBuffers=0;
-    std::atomic<uint32_t>               m_nrBufferedFrames=0;
     uint32_t					        m_videoFrameBufferSize=32;
     uint32_t 				            m_nrFramesToStart=2;
 
     unsigned int				        m_nrPboBufs=3;
     unsigned int 				        m_actFrameNr=0;
-    int 				                m_frameToUpload=-1;
 
     uint8_t**                           m_dstSampleBuffer=nullptr;
 
@@ -198,11 +178,10 @@ protected:
     double						        m_timeBaseDiv=0.0;
     double						        m_frameDur=0.0;
 
-    std::vector<double>				    m_ptss;
     double						        m_lastPtss=-1.0;
+    int 				                m_frameToUpload=-1;
 
     unsigned int				        m_totNumFrames=0;
-    std::vector<std::vector<uint8_t>>	m_buffer;
     std::vector<uint8_t>                m_memInputBuf;
     size_t                              m_avioCtxBufferSize=4096;
     AVIOContext*                        m_ioContext=nullptr;

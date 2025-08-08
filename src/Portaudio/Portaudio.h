@@ -95,8 +95,8 @@ protected:
     std::mutex              m_streamMtx;
     PaStreamParameters      m_inputParameters{0};
     PaStreamParameters      m_outputParameters{0};
-    CycleBuffer<float>      m_cycleBuffer;  /// interleaved sample order, must be a multiple of framesPerBuffer * numChannels
 
+    CycleBuffer<std::vector<float>> m_cycleBuffer;  /// interleaved sample order, must be a multiple of framesPerBuffer * numChannels
     std::function<void(const void*, void*, uint64_t)>   m_streamProcCb;
 };
 }

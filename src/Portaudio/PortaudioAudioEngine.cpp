@@ -33,7 +33,7 @@ void PortaudioAudioEngine::play(Sample& samp) {
 
 void PortaudioAudioEngine::procSampleQueue() {
     bool countUp = false;
-    std::ranges::fill(m_cycleBuffer.getWriteBuff().getData(), 0.f);
+    std::ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
     for (auto samp : m_samplePlayQueue) {
         if (samp->getBuffer() && (samp->getPlayPos() < samp->getBuffer()->size() || samp->isLooping())) {
             addSampleAtPos(*samp);
@@ -48,7 +48,7 @@ void PortaudioAudioEngine::procSampleQueue() {
 }
 
 void PortaudioAudioEngine::addSampleAtPos(Sample& samp) {
-    auto outBufPtr = m_cycleBuffer.getWriteBuff().getData().begin();
+    auto outBufPtr = m_cycleBuffer.getWriteBuff().begin();
     auto framesToWrite = std::min(m_framesPerBuffer, static_cast<int32_t>(samp.getBuffer()->size() - samp.getPlayPos()) / samp.getNumChannels());
 
     for (auto frame = 0; frame < framesToWrite; ++frame) {

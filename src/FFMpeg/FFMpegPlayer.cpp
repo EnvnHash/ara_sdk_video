@@ -7,6 +7,7 @@
 
 #if defined(ARA_USE_FFMPEG) && defined(ARA_USE_PORTAUDIO) && defined(ARA_USE_GLBASE)
 
+#include <GLBase.h>
 #include "FFMpegPlayer.h"
 
 using namespace glm;
@@ -101,7 +102,6 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
     auto buf = reinterpret_cast<float**>(data.buffer);
     for (size_t i=0; i<m_bufSizeFact; i++) {
         m_paudio.getCycleBuffer().feed((float*)&buf[0][0] + i * m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
-
     }
 }
 
@@ -110,10 +110,9 @@ void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
 
     if (m_videoCodecCtx) {
         if (!p.decodeYuv420OnGpu && p.destWidth && p.destHeight) {
-            m_buffer = vector<vector<uint8_t>>(m_videoFrameBufferSize);
-            m_bgraFrame = vector<AVFrame*>(m_videoFrameBufferSize);
-            for (auto i = 0; i < m_videoFrameBufferSize; i++) {
-                m_bgraFrame[i] = allocPicture(m_destPixFmt, p.destWidth, p.destHeight, m_buffer.begin() + i);
+            m_bgraFrame.allocateBuffers(m_videoFrameBufferSize);
+            for (auto& it : m_bgraFrame.getBuffer()) {
+                it.frame = allocPicture(m_destPixFmt, p.destWidth, p.destHeight, it.buf);
             }
         }
 
@@ -171,50 +170,54 @@ void FFMpegPlayer::initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p) {
 }
 
 std::string FFMpegPlayer::getVertShader() {
-    return STRINGIFY(  layout(location = 0) in vec4 position;    \n
-                       layout(location = 2) in vec2 texCoord;    \n
-                       uniform mat4 m_pvm;                       \n
-                       out vec2 tex_coord;                       \n
-                       void main() {                             \n
-                       \t tex_coord = texCoord;                  \n
-                       \t gl_Position = m_pvm * position;        \n
-               });
+    return STRINGIFY(
+        layout(location = 0) in vec4 position;    \n
+        layout(location = 2) in vec2 texCoord;    \n
+        uniform mat4 m_pvm;                       \n
+        out vec2 tex_coord;                       \n
+        void main() {                             \n
+        \t tex_coord = texCoord;                  \n
+        \t gl_Position = m_pvm * position;        \n
+    });
 }
 
 std::string FFMpegPlayer::getFragShaderHeader() {
-    return STRINGIFY(uniform sampler2D tex_unit; \n // Y component
-                      uniform sampler2D u_tex_unit; \n // U component
-                      uniform sampler2D v_tex_unit; \n // V component
-                      uniform float alpha; \n // V component
-                      \n
-                      in vec2 tex_coord; \n
-                      layout(location = 0) out vec4 fragColor; \n
-                      void main() { \n);
+    return STRINGIFY(
+        uniform sampler2D tex_unit; \n // Y component
+        uniform sampler2D u_tex_unit; \n // U component
+        uniform sampler2D v_tex_unit; \n // V component
+        uniform float alpha; \n // V component
+        \n
+        in vec2 tex_coord; \n
+        layout(location = 0) out vec4 fragColor; \n
+        void main() { \n);
 }
 
 std::string FFMpegPlayer::getNv12FragShader() {
-    return STRINGIFY(float y = texture(tex_unit, tex_coord).r;              \n
-                     float u = texture(u_tex_unit, tex_coord).r - 0.5;      \n
-                     float v = texture(u_tex_unit, tex_coord).g - 0.5;      \n
+    return STRINGIFY(
+        float y = texture(tex_unit, tex_coord).r;              \n
+        float u = texture(u_tex_unit, tex_coord).r - 0.5;      \n
+        float v = texture(u_tex_unit, tex_coord).g - 0.5;      \n
 
-                     fragColor = vec4((vec3(y + 1.4021 * v,                 \n
-                                            y - 0.34482 * u - 0.71405 * v,  \n
-                                            y + 1.7713 * u)                 \n
-                                       - 0.05) * 1.07,                      \n
-                                      alpha);                               \n
+        fragColor = vec4((vec3(y + 1.4021 * v,                 \n
+                               y - 0.34482 * u - 0.71405 * v,  \n
+                               y + 1.7713 * u)                 \n
+                          - 0.05) * 1.07,                      \n
+                         alpha);                               \n
     );
 }
 
 std::string FFMpegPlayer::getNv21FragShader() {
     return STRINGIFY(
-            float y = texture(tex_unit, tex_coord).r;             \n
-            float u = texture(u_tex_unit, tex_coord).g - 0.5;     \n
-            float v = texture(u_tex_unit, tex_coord).r - 0.5;     \n
-            fragColor = vec4((vec3(y + 1.4021 * v,                \n
-                                   y - 0.34482 * u - 0.71405 * v, \n
-                                   y + 1.7713 * u)                \n
-                                   - 0.05) * 1.07,                \n
-                              alpha);                             \n);
+        float y = texture(tex_unit, tex_coord).r;             \n
+        float u = texture(u_tex_unit, tex_coord).g - 0.5;     \n
+        float v = texture(u_tex_unit, tex_coord).r - 0.5;     \n
+        fragColor = vec4((vec3(y + 1.4021 * v,                \n
+                               y - 0.34482 * u - 0.71405 * v, \n
+                               y + 1.7713 * u)                \n
+                               - 0.05) * 1.07,                \n
+                          alpha);                             \n
+    );
 }
 
 std::string FFMpegPlayer::getYuv420FragShader() {
@@ -237,7 +240,8 @@ std::string FFMpegPlayer::getYuv420FragShader() {
         float g = y - 0.344 * u - 0.714 * v;                \n
         float b = y + 1.772 * u;                            \n
 
-        fragColor = vec4(vec3(r, g, b), alpha); \n);
+        fragColor = vec4(vec3(r, g, b), alpha);             \n
+    );
 }
 
 void FFMpegPlayer::shaderBegin() {
@@ -272,27 +276,26 @@ void FFMpegPlayer::shaderBegin() {
 }
 
 void FFMpegPlayer::loadFrameToTexture(double time) {
-    if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1) {
+    if (m_resourcesAllocated && m_run && !m_pause && m_frames.getFillAmt() > 0) {
         auto actRelTime = time - m_startTime + static_cast<double>(m_videoStartPts) * m_timeBaseDiv;
-        auto searchInd = (m_frameToUpload +1) % m_videoFrameBufferSize;
 
         if (!m_glResInited && m_srcWidth && m_srcHeight) {
             allocGlRes(m_srcPixFmt);
             m_glResInited = true;
         }
 
-        if (calcFrameToUpload(actRelTime, searchInd, time)
-            && m_frameToUpload > -1
+        if (calcFrameToUpload(actRelTime, time)
             && m_consumeFrames
-            && m_framePtr[m_frameToUpload]->width
-            && m_framePtr[m_frameToUpload]->height) {
-            m_mutex.lock();
+            && m_frames.getReadBuff().frame->width
+            && m_frames.getReadBuff().frame->height) {
+
+            auto rp = m_frames.getReadPos();
 
             if (m_par.decodeYuv420OnGpu) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
+                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_frames.empty()) {
                     uploadNvFormat();
-                } else if ((AV_PIX_FMT_YUV420P == m_srcPixFmt || AV_PIX_FMT_YUYV422 == m_srcPixFmt) && !m_framePtr.empty() && !m_textures.empty()) {
+                } else if ((AV_PIX_FMT_YUV420P == m_srcPixFmt || AV_PIX_FMT_YUYV422 == m_srcPixFmt) && !m_frames.empty() && !m_textures.empty()) {
                     uploadYuv420();
                 }
             } else {
@@ -302,73 +305,61 @@ void FFMpegPlayer::loadFrameToTexture(double time) {
                     uploadRgba();
                 }
                 if (m_downFrameCb) {
-                    m_downFrameCb(m_bgraFrame[m_frameToUpload]->data[0]);
+                    m_downFrameCb(m_bgraFrame.getReadBuff().frame->data[0]);
                 }
             }
 
             // mark as consumed
-            m_framePtr[m_frameToUpload]->pts = -1;
-            if (m_nrBufferedFrames > 0) {
-                --m_nrBufferedFrames;
-            }
-            m_mutex.unlock();
+            auto actptss = m_frames.getReadBuff().ptss;
+            m_frames.getReadBuff().frame->pts = -1;
+            m_frames.consumeCountUp();
             m_decodeCond.notify();     // wait until the packet was needed
             m_lastToGlTime = time;
+
+            //LOG << "upload " << rp << " ptss:" << actptss << " relTime:" << actRelTime << " diff: " << (actptss - actRelTime);
         }
     }
 }
 
-bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, uint32_t searchInd, double time) {
-    bool uploadNewFrame = false;
-
-    // check for the first frame or a frame with a pts close to the actual time
+bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time) {
     if (!m_hasNoTimeStamp) {
-        while (searchInd < static_cast<uint32_t>(m_videoFrameBufferSize)) {
-            if (!m_firstFramePresented) {
-                if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_isStream) {
-                    m_firstFramePresented = true;
-                    m_startTime = time;
-                    m_frameToUpload = searchInd % m_videoFrameBufferSize;
-                    m_consumeFrames = true;
-                    uploadNewFrame = true;
-                    break;
-                }
+        // time stabilization, try to take the next frame in queue, but advance if there is a frame closer to the actual time
+        if (!m_firstFramePresented) {
+            m_firstFramePresented = true;
+            m_startTime = time;
+            m_consumeFrames = true;
+            return true;
+        } else {
+            auto readPosTimeDiff = actRelTime - m_frames.getReadBuff().ptss;
+            if (readPosTimeDiff < 0) {
+                return false;
             } else {
-                // if we have a timestamp with a pts that differs less than 25% of a frame duration, present it
-                if (std::fabs(m_ptss[searchInd % m_videoFrameBufferSize] - actRelTime) < (m_frameDur * 0.25)
-                    || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0
-                        && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime)) {
-                    // if we are playing in loop mode and reached the last m_frame, reset the m_startTime
-                    if (static_cast<uint32_t>(m_ptss[searchInd % m_videoFrameBufferSize] / m_frameDur) == (m_totNumFrames - 1)) {
-                        m_startTime = time;
+                for (auto i=1; i<m_frames.getFillAmt()-1; ++i) {
+                    auto idx = (m_frames.getReadPos() + i) % m_frames.getCapacity();
+                    auto diff = actRelTime - m_frames.getBuffer()[idx].ptss;
+                    if (diff > 0 && diff < fabs(readPosTimeDiff)) {
+                        m_frames.setReadPos(idx);
+                        readPosTimeDiff = actRelTime - m_frames.getReadBuff().ptss;
                     }
-
-                    int newFrameInd = searchInd % m_videoFrameBufferSize;
-                    uploadNewFrame = newFrameInd != m_frameToUpload;
-                    m_frameToUpload = newFrameInd;
-                    break;
                 }
             }
-
-            // check if there are frames that are too old
-            ++searchInd;
+            return true;
         }
     } else {
         // in case there is no timestamp just take the framerate to offset
-        if (!m_consumeFrames && static_cast<int>(m_nrBufferedFrames) >= m_nrFramesToStart) {
+        if (!m_consumeFrames && m_frames.getFillAmt() >= m_nrFramesToStart) {
             m_consumeFrames = true;
             m_startTime = time;
             actRelTime = 0.0;
         }
 
-        uploadNewFrame = m_consumeFrames && m_nrBufferedFrames > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
+        auto uploadNewFrame = m_consumeFrames && m_frames.getFillAmt() > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
         if (uploadNewFrame) {
             actRelTime = time - m_startTime;
             ++m_frameToUpload %= m_videoFrameBufferSize;
         }
+        return uploadNewFrame;
     }
-
-    return uploadNewFrame;
 }
 
 void FFMpegPlayer::uploadNvFormat() {
@@ -376,14 +367,14 @@ void FFMpegPlayer::uploadNvFormat() {
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, m_textures[1].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth / 2, m_srcHeight / 2,
-                    GL_RG, GL_UNSIGNED_BYTE, m_framePtr[m_frameToUpload]->data[1]);
+                    GL_RG, GL_UNSIGNED_BYTE, m_frames.getReadBuff().frame->data[1]);
 
     // Y
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                    m_framePtr[m_frameToUpload]->data[0]);
+                    m_frames.getReadBuff().frame->data[0]);
 }
 
 void FFMpegPlayer::uploadYuv420() {
@@ -398,7 +389,7 @@ void FFMpegPlayer::uploadYuv420() {
     glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                    m_framePtr[m_frameToUpload]->data[0]);
+                    m_frames.getReadBuff().frame->data[0]);
 
     int chroma_width = m_srcWidth / 2;
     int chroma_height = m_srcHeight / 2;
@@ -407,14 +398,14 @@ void FFMpegPlayer::uploadYuv420() {
     glBindTexture(GL_TEXTURE_2D, m_textures[1].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                    m_framePtr[m_frameToUpload]->data[1]);
+                    m_frames.getReadBuff().frame->data[1]);
 
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, m_textures[2].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                    m_framePtr[m_frameToUpload]->data[2]);
+                    m_frames.getReadBuff().frame->data[2]);
 }
 
 void FFMpegPlayer::uploadViaPbo() {
@@ -450,10 +441,10 @@ void FFMpegPlayer::uploadViaPbo() {
     // map the buffer object into client's memory
     auto ptr = reinterpret_cast<GLubyte *>(glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT));
 
-    if (ptr && !m_framePtr.empty())
+    if (ptr && !m_frames.empty())
     {
         // update data directly on the mapped buffer
-        memcpy(ptr, m_bgraFrame[m_frameToUpload]->data[0], m_par.destWidth * m_par.destHeight * 4);
+        memcpy(ptr, m_bgraFrame.getReadBuff().frame->data[0], m_par.destWidth * m_par.destHeight * 4);
         glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
     }
 
@@ -463,11 +454,11 @@ void FFMpegPlayer::uploadViaPbo() {
 }
 
 void FFMpegPlayer::uploadRgba() {
-    if (!m_framePtr.empty()) {
+    if (!m_frames.empty()) {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_par.destWidth, m_par.destHeight,
-                        GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame[m_frameToUpload]->data[0]);
+                        GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame.getReadBuff().frame->data[0]);
     }
 }
 

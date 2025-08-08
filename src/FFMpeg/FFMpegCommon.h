@@ -72,6 +72,15 @@ namespace ara {
 
 namespace ara::av::ffmpeg {
 
+struct TimedFrame {
+    AVFrame* frame=nullptr;
+    double ptss=0;
+};
+
+struct TimedPicture : public TimedFrame {
+    std::vector<uint8_t> buf;
+};
+
 struct DecodePar {
     GLBase*     glbase = nullptr;
     std::string filePath;

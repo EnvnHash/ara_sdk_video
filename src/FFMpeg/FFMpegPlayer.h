@@ -35,7 +35,7 @@ private:
     void allocateResources(ffmpeg::DecodePar& p) override;
     void allocGlRes(AVPixelFormat srcPixFmt);
     void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
-    bool calcFrameToUpload(double& actRelTime, uint32_t searchInd, double time);
+    bool calcFrameToUpload(double& actRelTime, double time);
     void uploadNvFormat();
     void uploadYuv420();
     void uploadViaPbo();

@@ -114,7 +114,7 @@ void drawAudioWriteBuffer() {
     stdCol->setUniform4f("color", 1.f, 0.f, 0.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         audioInfoBlockLeft + lableWidth + (float)player.getDecFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
+                         audioInfoBlockLeft + lableWidth + (float) player.getWriteFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight * 2.5);
 
     quad->draw();
@@ -129,14 +129,14 @@ void drawAudioReadBuffer() {
     stdCol->setUniform4f("color", 0.f, 0.f, 1.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         infoBlockLeft + lableWidth + (float)player.getUplFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float) player.getReadFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight*6.5);
 
     quad->draw();
 }
 
 void drawDecodeBufferNr() {
-    std::string decLabl = "V-Decode Buffer: "+std::to_string(player.getDecFramePtr());
+    std::string decLabl = "V-Decode Buffer: "+std::to_string(player.getWriteFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*4, decLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -144,14 +144,14 @@ void drawDecodeBufferNr() {
     stdCol->setUniform4f("color", 1.f, 0.f, 0.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         infoBlockLeft + lableWidth + (float)player.getDecFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float) player.getWriteFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight*2.5);
 
     quad->draw();
 }
 
 void drawFrameToUploadNr() {
-    std::string uplLabl = "V-Upload Buffer: "+std::to_string(player.getUplFramePtr());
+    std::string uplLabl = "V-Upload Buffer: "+std::to_string(player.getReadFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*8, uplLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -159,7 +159,7 @@ void drawFrameToUploadNr() {
     stdCol->setUniform4f("color", 0.f, 0.f, 1.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         infoBlockLeft + lableWidth + (float)player.getUplFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float) player.getReadFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
     infoBlockTop - barHeight*6.5);
 
     quad->draw();
