@@ -1,0 +1,483 @@
+/*
+ * FFMpegDecode.cpp
+ *
+ *  Created on: 29.01.2018
+ *      Author: sven
+ */
+
+#if defined(ARA_USE_FFMPEG) && defined(ARA_USE_PORTAUDIO) && defined(ARA_USE_GLBASE)
+
+#include "FFMpegPlayer.h"
+
+using namespace glm;
+using namespace std;
+
+namespace ara::av {
+
+void FFMpegPlayer::openFile(const ffmpeg::DecodePar& p) {
+    FFMpegDecode::openFile(p);
+#ifdef ARA_USE_GLBASE
+    if (p.glbase){
+        m_shCol = &p.glbase->shaderCollector();
+    }
+#endif
+    try {
+        if (m_audioNumChannels > 0) {
+            if (!m_paudio.init({
+                .sampleRate = 48000,
+                .numChannels = 2
+            })) {
+                throw runtime_error("FFMpegDecodeAudio::OpenFile Error could not initialize Portaudio. Aborting");
+            }
+            m_paudio.printInfo();
+
+            // check if the video's audio m_format is supported by the hardware
+            // if the m_format is not supported, or if the sample m_format is not interleaved float values,
+            // we need to set up a sample rate m_converter inside FFMpegDecoder
+            bool useConverter = false;
+            auto nrChannels = m_audioNumChannels;
+            if (!m_paudio.isNrOutChanSupported(nrChannels)) {
+                useConverter = true;
+            }
+
+            auto sampleRate = m_audioCodecCtx->sample_rate;
+            if (sampleRate != m_paudio.getSampleRate()) {
+                useConverter = true;
+                sampleRate = m_paudio.getSampleRate();
+            }
+
+            setAudioUpdtCb([this](audioCbData& data) { recvAudioPacket(data); });
+
+            if (useConverter && !FFMpegDecode::setAudioConverter(sampleRate, AV_SAMPLE_FMT_FLT)) {
+                throw runtime_error("FFMpegDecodeAudio::openFile Error could not initialize audio m_converter. Aborting");
+            }
+            LOG << " --> Setup Sample Conversion success!!";
+        }
+    } catch (std::runtime_error& e) {
+        LOGE << "FFMpegDecodeAudio::openFile Error: " << e.what();
+    }
+}
+
+void FFMpegPlayer::start(double time) {
+    if (m_audioNumChannels) {
+        m_paudio.start();
+    }
+    FFMpegDecode::start(time);
+}
+
+void FFMpegPlayer::stop() {
+    FFMpegDecode::stop();
+}
+
+/** Note: nrSamples refers to a single channel */
+void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
+    if (m_paudio.getCycleBuffer().empty()) {
+        // how many portaudio buffers fit in the ffmpeg audio buffer?
+        m_bufSizeFact = std::max<size_t>(data.samples / m_paudio.getFramesPerBuffer(), 1);
+
+        // register this multiplication factor to know when to free the feed block again
+        m_paudio.getCycleBuffer().allocateBuffers(m_cycBufSize * m_bufSizeFact, m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
+    }
+
+    if (static_cast<AVSampleFormat>(data.sampleFmt) != AV_SAMPLE_FMT_FLT) {
+        LOGE << "FFmpegDecodeAudio::recvAudioPacket Error. Wrong sample format!";
+        return;
+    }
+
+    while (m_paudio.getCycleBuffer().getFreeSpace() < m_bufSizeFact) {
+        LOGE << "overflow!!!";
+        std::this_thread::sleep_for(1ms);
+    }
+
+    // copy the new audio frame to Portaudio internal CycleBuffer
+    // ffmpeg audio frames are coming in m_format AV_SAMPLE_FMT_FLT, that is float interleaved
+    // total size of a ffmpeg frame are nrSamples * nrChannels
+    auto buf = reinterpret_cast<float**>(data.buffer);
+    for (size_t i=0; i<m_bufSizeFact; i++) {
+        m_paudio.getCycleBuffer().feed((float*)&buf[0][0] + i * m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
+
+    }
+}
+
+void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
+    FFMpegDecode::allocateResources(p);
+
+    if (m_videoCodecCtx) {
+        if (!p.decodeYuv420OnGpu && p.destWidth && p.destHeight) {
+            m_buffer = vector<vector<uint8_t>>(m_videoFrameBufferSize);
+            m_bgraFrame = vector<AVFrame*>(m_videoFrameBufferSize);
+            for (auto i = 0; i < m_videoFrameBufferSize; i++) {
+                m_bgraFrame[i] = allocPicture(m_destPixFmt, p.destWidth, p.destHeight, m_buffer.begin() + i);
+            }
+        }
+
+        // destFmt BGRA
+        if (m_usePbos) {
+            m_pbos = vector<GLuint>(m_nrPboBufs);
+            std::fill(m_pbos.begin(), m_pbos.end(), 0);
+        }
+    }
+}
+
+void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
+    initShader(srcPixFmt, m_par);
+
+    if (m_par.decodeYuv420OnGpu) {
+        m_nrTexBuffers = (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
+    } else {
+        m_nrTexBuffers = 1;
+    }
+
+    m_textures = std::vector<std::unique_ptr<Texture>>(m_nrTexBuffers);
+    for (auto &it : m_textures) {
+        it = make_unique<Texture>(m_par.glbase);
+    }
+
+    if (m_par.decodeYuv420OnGpu) {
+        if (m_srcPixFmt == AV_PIX_FMT_NV12 || m_srcPixFmt == AV_PIX_FMT_NV21) {
+            m_textures[0]->allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[1]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_RG8, GL_RG, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+        } else {   // YUV420P
+            m_textures[0]->allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[1]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[2]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+        }
+    } else {
+        m_textures[0]->allocate2D(m_par.destWidth, m_par.destHeight, GL_RGB8, GL_RGB, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+    }
+}
+
+void FFMpegPlayer::initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p) {
+    if (p.decodeYuv420OnGpu && !m_shCol->hasShader("FFMpegDecode_yuv")) {
+        auto shdr_Header = ara::ShaderCollector::getShaderHeader();
+
+        std::string vert = STRINGIFY( layout(location = 0) in vec4 position;    \n
+                                              layout(location = 2) in vec2 texCoord;                              \n
+                                              uniform mat4 m_pvm;                                                 \n
+                                              out vec2 tex_coord;                                                 \n
+                                              void main() {                                                       \n
+                                              \t tex_coord = texCoord;                                        \n
+                                              \t gl_Position = m_pvm * position;                              \n
+                                      });
+        vert = shdr_Header + "// yuv420 texture shader, vert\n"  + vert;
+
+        // YUV420 is a planar (non-packed) m_format.
+        // the first plane is the Y with one byte per pixel.
+        // the second plane us U with one byte for each 2x2 square of pixels
+        // the third plane is V with one byte for each 2x2 square of pixels
+        //
+        // tex_unit - contains the Y (luminance) component of the
+        //    image. this is a texture unit set up by the OpenGL program.
+        // u_texture_unit, v_texture_unit - contain the chrominance parts of
+        //    the image. also texture units  set up by the OpenGL program.
+        std::string frag = STRINGIFY(uniform sampler2D tex_unit; \n // Y component
+                                             uniform sampler2D u_tex_unit; \n // U component
+                                             uniform sampler2D v_tex_unit; \n // V component
+                                             uniform float alpha; \n // V component
+                                             \n
+                                             in vec2 tex_coord; \n
+                                             layout(location = 0) out vec4 fragColor; \n
+                                             void main() { \n);
+
+        // NV12
+        if (srcPixFmt == AV_PIX_FMT_NV12) {
+            frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
+                                      float u = texture(u_tex_unit, tex_coord).r - 0.5; \n
+                                      float v = texture(u_tex_unit, tex_coord).g - 0.5; \n
+
+                                      fragColor = vec4(
+                              (vec3(y + 1.4021 * v, \n
+                                      y - 0.34482 * u - 0.71405 * v, \n
+                                      y + 1.7713 * u)
+                                      - 0.05) * 1.07, \n
+                                      alpha); \n
+            );
+        } else if (srcPixFmt == AV_PIX_FMT_NV21) {
+            frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
+                                      float u = texture(u_tex_unit, tex_coord).g - 0.5; \n
+                                      float v = texture(u_tex_unit, tex_coord).r - 0.5; \n
+
+                                      fragColor = vec4(
+                              (vec3(y + 1.4021 * v, \n
+                                      y - 0.34482 * u - 0.71405 * v, \n
+                                      y + 1.7713 * u)
+                                      - 0.05) * 1.07, \n
+                                      alpha); \n
+            );
+        } else {
+            // YUV420P
+            frag += STRINGIFY(
+                    float y = texture(tex_unit, tex_coord).r; \n
+                    float u = texture(u_tex_unit, tex_coord).r - 0.5; \n
+                    float v = texture(v_tex_unit, tex_coord).r - 0.5; \n
+
+                    float r = y + 1.402 * v; \n
+                    float g = y - 0.344 * u - 0.714 * v; \n
+                    float b = y + 1.772 * u; \n
+
+                    fragColor = vec4(vec3(r, g, b), alpha); \n);
+        }
+
+        frag += "}";
+        frag = shdr_Header + "// YUV420 fragment shader\n"  + frag;
+        m_shader = m_shCol->add("FFMpegDecode_yuv", vert, frag);
+    } else {
+        m_shader = m_shCol->getStdTexAlpha();
+    }
+}
+
+void FFMpegPlayer::shaderBegin() {
+    if (m_run && m_shader && !m_textures.empty()) {
+        m_shader->begin();
+        m_shader->setIdentMatrix4fv("m_pvm");
+        m_shader->setUniform1f("alpha", 1.f); // y
+
+        if (m_par.decodeYuv420OnGpu) {
+            m_shader->setUniform1i("tex_unit", 0); // y
+            m_shader->setUniform1i("u_tex_unit", 1); // u
+            m_shader->setUniform1i("v_tex_unit", 2); // v
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId()); // y
+
+            if (m_srcPixFmt == AV_PIX_FMT_YUV420P || m_srcPixFmt == AV_PIX_FMT_NV12) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId()); // u
+            }
+
+            if (m_srcPixFmt == AV_PIX_FMT_YUV420P) {
+                glActiveTexture(GL_TEXTURE2);
+                glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId()); // v
+            }
+        } else {
+            m_shader->setUniform1i("tex", 0); // y
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId()); // y
+        }
+    }
+}
+
+void FFMpegPlayer::loadFrameToTexture(double time) {
+        if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1) {
+            double actRelTime = time - m_startTime + ((double)m_videoStartPts * m_timeBaseDiv);
+            uint searchInd = (m_frameToUpload +1) % m_videoFrameBufferSize;
+            bool uploadNewFrame = false;
+
+            if (!m_glResInited && m_srcWidth && m_srcHeight) {
+                allocGlRes(m_srcPixFmt);
+                m_glResInited = true;
+            }
+
+            if (!m_glResInited) {
+                return;
+            }
+
+            // check for the first frame or a frame with a pts close to the actual time
+            if (!m_hasNoTimeStamp) {
+                while (searchInd < (uint) m_videoFrameBufferSize) {
+                    if (!m_firstFramePresented) {
+                        if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_isStream) {
+                            m_firstFramePresented = true;
+                            m_startTime = time;
+                            m_frameToUpload = searchInd % m_videoFrameBufferSize;
+                            m_consumeFrames = true;
+                            uploadNewFrame = true;
+                            break;
+                        }
+                    } else {
+                        // if we have a timestamp with a pts that differs less than 25% of a frame duration, present it
+                        if (std::fabs(m_ptss[searchInd % m_videoFrameBufferSize] - actRelTime) < (m_frameDur * 0.25)
+                            || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0 && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime)) {
+                            // if we are playing in loop mode and reached the last m_frame, reset the m_startTime
+                            if ((uint) (m_ptss[searchInd % m_videoFrameBufferSize] / m_frameDur) == (m_totNumFrames - 1)) {
+                                m_startTime = time;
+                            }
+
+                            int newFrameInd = searchInd % m_videoFrameBufferSize;
+                            uploadNewFrame = newFrameInd != m_frameToUpload;
+                            m_frameToUpload = newFrameInd;
+                            break;
+                        }
+                    }
+
+                    // check if there are frames that are too old
+                    ++searchInd;
+                }
+            }
+            else
+            {
+                // in case there is no timestamp just take the framerate to offset
+                if (!m_consumeFrames && (int)m_nrBufferedFrames >= m_nrFramesToStart) {
+                    m_consumeFrames = true;
+                    m_startTime = time;
+                    actRelTime = 0.0;
+                }
+
+                uploadNewFrame = m_consumeFrames && m_nrBufferedFrames > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
+                if (uploadNewFrame) {
+                    actRelTime = time - m_startTime;
+                    ++m_frameToUpload %= m_videoFrameBufferSize;
+
+                    /* // hypothetical frameNumber in relation to the actual time
+                     int newFrameNr = (int)(actRelTime * (double) m_fps) % m_videoFrameBufferSize;
+                     if (newFrameNr != m_frameToUpload)
+                     {
+                         //LOG << "m_consumeFrames actRelTime " << actRelTime << " newFrameNr " << newFrameNr;
+                         m_frameToUpload = newFrameNr;
+                         uploadNewFrame = true;
+                         LOG << "up frame " <<  m_frameToUpload;
+                         if (m_frameToUpload == m_decFramePtr)
+                             LOGE << " read write same frame";
+
+                         if (!m_framePtr[m_frameToUpload]->width){
+                             LOGE << "trying to upload invalid frame!!!";
+                             uploadNewFrame = false;
+                             m_nrBufferedFrames--;
+
+                         }
+                     }*/
+                }
+            }
+
+            if (m_frameToUpload > -1
+                && m_consumeFrames
+                && uploadNewFrame
+                && m_framePtr[m_frameToUpload]->width
+                && m_framePtr[m_frameToUpload]->height) {
+                m_mutex.lock();
+
+                if (m_par.decodeYuv420OnGpu) {
+                    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+                    if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
+                        // UV interleaved
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth / 2, m_srcHeight / 2,
+                                        GL_RG, GL_UNSIGNED_BYTE, m_framePtr[m_frameToUpload]->data[1]);
+
+                        // Y
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
+                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                                        m_framePtr[m_frameToUpload]->data[0]);
+                    }
+
+                    // if the video is encoded as YUV420 it's in three separate areas in
+                    // memory (planar-- not interlaced). so if we have three areas of
+                    // data, set up one texture unit for each one. in the if statement
+                    // we'll set up the texture units for chrominance (U & V) and we'll
+                    // put the luminance (Y) data in GL_TEXTURE0 after the if.
+
+                    if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty()) {
+                        // luminance values, whole picture
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
+                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                                        m_framePtr[m_frameToUpload]->data[0]);
+
+                        int chroma_width = m_srcWidth / 2;
+                        int chroma_height = m_srcHeight / 2;
+
+                        glActiveTexture(GL_TEXTURE1);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
+                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                                        m_framePtr[m_frameToUpload]->data[1]);
+
+
+                        glActiveTexture(GL_TEXTURE2);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId());
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
+                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                                        m_framePtr[m_frameToUpload]->data[2]);
+                    }
+                } else {
+                    if (m_usePbos) {
+                        m_pboIndex = (m_pboIndex + 1) % m_nrPboBufs;
+                        uint nextIndex = (m_pboIndex + 1) % m_nrPboBufs;
+
+                        glActiveTexture(GL_TEXTURE0);
+                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[m_pboIndex]);
+
+                        glTexSubImage2D(GL_TEXTURE_2D,      // target
+                                        0,                      // First mipmap level
+                                        0, 0,                   // x and y offset
+                                        m_par.destWidth,              // width and height
+                                        m_par.destHeight,
+                                        GL_BGR,
+                                        GL_UNSIGNED_BYTE,
+                                        nullptr);
+
+
+                        // bind PBO to update texture source
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[nextIndex]);
+
+                        // Note that glMapBufferARB() causes sync issue.
+                        // If GPU is working with this buffer, glMapBufferARB() will wait(stall)
+                        // until GPU to finish its job. To avoid waiting (idle), you can call
+                        // first glBufferDataARB() with nullptr pointer before glMapBufferARB().
+                        // If you do that, the previous data in PBO will be discarded and
+                        // glMapBufferARB() returns a new allocated pointer immediately
+                        // even if GPU is still working with the previous data.
+                        glBufferData(GL_PIXEL_UNPACK_BUFFER, m_par.destWidth * m_par.destHeight * 4, nullptr, GL_STREAM_DRAW);
+
+                        // map the buffer object into client's memory
+                        auto ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT);
+
+                        if (ptr && !m_framePtr.empty())
+                        {
+                            // update data directly on the mapped buffer
+                            memcpy(ptr, m_bgraFrame[m_frameToUpload]->data[0], m_par.destWidth * m_par.destHeight * 4);
+                            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+                        }
+
+                        // it is good idea to release PBOs with ID 0 after use.
+                        // Once bound with 0, all pixel operations are back to normal ways.
+                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+                    } else {
+                        if (!m_framePtr.empty()) {
+                            glActiveTexture(GL_TEXTURE0);
+                            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_par.destWidth, m_par.destHeight,
+                                            GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame[m_frameToUpload]->data[0]);
+                        }
+                    }
+
+                    if (m_downFrameCb) {
+                        m_downFrameCb(m_bgraFrame[m_frameToUpload]->data[0]);
+                    }
+                }
+
+                // mark as consumed
+                m_framePtr[m_frameToUpload]->pts = -1;
+
+                if (m_nrBufferedFrames > 0) {
+                    --m_nrBufferedFrames;
+                    //LOG <<  "-- " << m_nrBufferedFrames;
+                } else {
+                    //LOGE << " not enough frames buffered";
+                }
+
+                m_mutex.unlock();
+                m_decodeCond.notify();     // wait until the packet was needed
+                m_lastToGlTime = time;
+            }
+        }
+    }
+
+void FFMpegPlayer::clearResources() {
+    FFMpegDecode::clearResources();
+    if (m_usePbos){
+        glDeleteBuffers(m_nrPboBufs, &m_pbos[0]);
+        m_pbos.clear();
+    }
+}
+
+}
+
+#endif

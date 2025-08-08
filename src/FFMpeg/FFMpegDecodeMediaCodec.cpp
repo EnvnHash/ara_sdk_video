@@ -15,12 +15,6 @@ void FFMpegDecodeMediaCodec::openCamera(const ffmpeg::DecodePar& p) {
     m_isStream = true;
     m_videoFrameBufferSize = 2;
 
-#ifdef ARA_USE_GLBASE
-    if (m_par.glbase) {
-        m_shCol = &m_par.glbase->shaderCollector();
-    }
-#endif
-
     initFFMpeg();
     try {
         allocFormatContext();
@@ -43,13 +37,6 @@ void FFMpegDecodeMediaCodec::openCamera(const ffmpeg::DecodePar& p) {
 bool FFMpegDecodeMediaCodec::openAndroidAsset(const FFMpegDecodePar& p) {
     m_resourcesAllocated = false;
     m_videoFrameBufferSize = useHwAccel ? 32 : 32;
-
-#ifdef ARA_USE_GLBASE
-    if (glbase){
-        m_glbase = glbase;
-        m_shCol = &glbase->shaderCollector();
-    }
-#endif
 
     avformat_network_init();
     m_logLevel = AV_LOG_INFO;
@@ -196,6 +183,26 @@ void FFMpegDecodeMediaCodec::parseVideoCodecPar(int32_t i, AVCodecParameters* lo
         }
 }
 
+int32_t FFMpegDecode::sendPacket(AVPacket* packet, AVCodecContext*) {
+    return mediaCodecGetInputBuffer(packet);
+}
+
+int32_t FFMpegDecode::checkReceiveFrame(AVCodecContext* codecContext) {
+    return mediaCodecDequeueOutputBuffer();
+}
+
+void FFMpegDecode::transferFromHwToCpu() {
+    size_t hwBufSize;
+    auto buffer = mediaCodecGetOutputBuffer(response, hwBufSize);
+    memcpy(&m_framePtr[m_decFramePtr]->data[0][0], buffer, m_rawBuffer[m_decFramePtr].size());
+
+    m_framePtr[m_decFramePtr]->pts = m_mediaCodecInfo.presentationTimeUs * av_q2d(m_formatContext->streams[m_videoStreamIndex]->time_base) * 1000;
+    m_framePtr[m_decFramePtr]->pkt_size = packet->size;
+    m_framePtr[m_decFramePtr]->format = (AVPixelFormat) codecContext->pix_fmt;
+
+    mediaCodecReleaseOutputBuffer(response);
+}
+
 int FFMpegDecodeMediaCodec::mediaCodecGetInputBuffer(AVPacket* packet) {
     ssize_t bufIdx = AMediaCodec_dequeueInputBuffer(m_mediaCodec, 0);
 
@@ -250,6 +257,24 @@ uint8_t* FFMpegDecodeMediaCodec::mediaCodecGetOutputBuffer(int status, size_t& s
 
 void FFMpegDecodeMediaCodec::mediaCodecReleaseOutputBuffer(int status) {
     AMediaCodec_releaseOutputBuffer(m_mediaCodec, status, m_mediaCodecInfo.size != 0);
+}
+
+void FFMpegDecodeMediaCodec::clearResources() {
+    if (m_mediaCodec) {
+        AMediaCodec_stop(m_mediaCodec);
+        AMediaCodec_delete(m_mediaCodec);
+        m_mediaCodec = nullptr;
+    }
+
+    if (m_mediaExtractor) {
+        AMediaExtractor_delete(m_mediaExtractor);
+        m_mediaExtractor = nullptr;
+    }
+
+    if (m_bsfCtx) {
+        av_bsf_free(&m_bsfCtx);
+        m_bsfCtx = nullptr;
+    }
 }
 
 }

@@ -6,7 +6,7 @@
  */
 
 
-#include <FFMpeg/FFMpegDecodeAudio.h>
+#include "FFMpeg/FFMpegPlayer.h"
 #include <WindowManagement/GLFWWindow.h>
 #include <GeoPrimitives/Quad.h>
 #include <GLBase.h>
@@ -24,7 +24,7 @@ GLBase              glbase;
 Shaders*            stdTex;
 Shaders*            stdCol;
 unique_ptr<Quad>    quad;
-FFMpegDecodeAudio   decoder;
+FFMpegPlayer   decoder;
 unique_ptr<TypoGlyphMap> typo;
 
 int				    winWidth = 1280;

@@ -263,5 +263,92 @@ static double r2d(AVRational r) {
     return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den;
 }
 
+static int checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec) {
+    int ret = avformat_match_stream_specifier(s, st, spec);
+    if (ret < 0) {
+        av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
+    }
+    return ret;
+}
+
+static AVDictionary* filterCodecOpts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s,
+                                     AVStream *st, AVCodec *codec) {
+    AVDictionary    *ret = nullptr;
+    AVDictionaryEntry *t = nullptr;
+    int            flags = s->oformat ? AV_OPT_FLAG_ENCODING_PARAM
+                                      : AV_OPT_FLAG_DECODING_PARAM;
+    char          prefix = 0;
+    const AVClass    *cc = avcodec_get_class();
+
+    if (!codec) {
+        codec = (AVCodec*)(s->oformat ? avcodec_find_encoder(codec_id) : avcodec_find_decoder(codec_id));
+    }
+
+    switch (st->codecpar->codec_type) {
+        case AVMEDIA_TYPE_VIDEO:
+            prefix  = 'v';
+            flags  |= AV_OPT_FLAG_VIDEO_PARAM;
+            break;
+        case AVMEDIA_TYPE_AUDIO:
+            prefix  = 'a';
+            flags  |= AV_OPT_FLAG_AUDIO_PARAM;
+            break;
+        case AVMEDIA_TYPE_SUBTITLE:
+            prefix  = 's';
+            flags  |= AV_OPT_FLAG_SUBTITLE_PARAM;
+            break;
+        default:
+            break;
+    }
+
+    while ((t = av_dict_get(opts, "", t, AV_DICT_IGNORE_SUFFIX))) {
+        char *p = strchr(t->key, ':');
+
+        // check stream specification in m_opt name
+        if (p) {
+            switch (checkStreamSpecifier(s, st, p + 1)) {
+                case  1: *p = 0; break;
+                case  0:         continue;
+                default:         break;
+            }
+        }
+
+        if (av_opt_find(&cc, t->key, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ) || !codec ||
+            (codec->priv_class && av_opt_find(&codec->priv_class, t->key, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ))) {
+            av_dict_set(&ret, t->key, t->value, 0);
+        } else if (t->key[0] == prefix && av_opt_find(&cc, t->key + 1, nullptr, flags, AV_OPT_SEARCH_FAKE_OBJ)) {
+            av_dict_set(&ret, t->key + 1, t->value, 0);
+        }
+
+        if (p) {
+            *p = ':';
+        }
+    }
+    return ret;
+}
+
+static AVDictionary** setupFindStreamInfoOpts(AVFormatContext *s, AVDictionary *codec_opts) {
+    if (!s->nb_streams) {
+        return nullptr;
+    }
+
+    AVDictionary **opts{};
+    opts = (AVDictionary**) av_calloc(s->nb_streams, sizeof(*opts));
+    if (!opts) {
+        LOGE << "Could not alloc memory for stream options.";
+        return nullptr;
+    }
+
+    for (unsigned int i = 0; i < s->nb_streams; i++) {
+        if (!s->streams[i]->codecpar){
+            LOGE << "FFMpegDecode::setupFindStreamInfoOpts Error streams[i]->codecpar == null";
+            continue;
+        }
+        opts[i] = filterCodecOpts(codec_opts, s->streams[i]->codecpar->codec_id, s, s->streams[i], nullptr);
+    }
+
+    return opts;
+}
+
 }
 #endif

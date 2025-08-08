@@ -37,9 +37,6 @@ class FFMpegDecode {
 public:
     virtual void 				        openFile(const ffmpeg::DecodePar& p);
     virtual void   				        openCamera(const ffmpeg::DecodePar& p);
-    static AVDictionary**               setupFindStreamInfoOpts(AVFormatContext *s, AVDictionary *codec_opts);
-    static AVDictionary*                filterCodecOpts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
-
     virtual void    			        start(double time);
     virtual void 						stop();
     void 						        setPause(bool val) { m_pause = val; }
@@ -66,14 +63,8 @@ public:
     inline void					        setVideoDecoderCb(std::function<void(uint8_t*)> cbFunc) { m_decodeCb = std::move(cbFunc); }
     inline void					        setVideoFrameBufferSize(int size) { m_videoFrameBufferSize = size; }
 
-    inline void                         forceSampleRate(int sr) { m_forceSampleRate = sr; }
-    inline void                         forceNrChannels(int nc) { m_forceNumChannels = nc; }
-    void                                forceAudioCodec(const std::string& str);
-
-    void                                clearResources();
+    virtual void                        clearResources();
     bool                                decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
-    void 						        shaderBegin();
-    void 						        loadFrameToTexture(double time);
 
     double  					        getDurationSec();
     double 						        getFps();
@@ -88,11 +79,6 @@ public:
     int                                 getFrameRateN() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.num; }
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
 
-#ifdef ARA_USE_GLBASE
-    Shaders* getShader() { return m_shader; }
-#endif
-    std::function<void(uint8_t*)>       m_downFrameCb;
-
 protected:
     void            initFFMpeg();
     void            setupHwDecoding();
@@ -101,34 +87,25 @@ protected:
     void            allocFormatContext();
     void            checkHwDeviceType();
     void            checkForNetworkSrc(const ffmpeg::DecodePar& p);
-    static int      checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec);
     bool            setupStreams(const AVInputFormat*, AVDictionary**, ffmpeg::DecodePar& p);
     void            initStreamInfo();
     void            parseSeeking();
     virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
-    void            allocateResources(ffmpeg::DecodePar& p);
+    virtual void    allocateResources(ffmpeg::DecodePar& p);
 
-    void 			allocGlRes(AVPixelFormat srcPixFmt);
     static AVFrame*	allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
     uint8_t*        reqNextBuf();
 
     void 			singleThreadDecodeLoop();
     int 			decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
-    void            transferFromHwToCpu();
-    void            transferFromMediacodecToCpu();
+    virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
+    virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
+    int32_t         parseReceivedFrame(AVCodecContext* codecContext);
+    virtual void    transferFromHwToCpu();
     int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
     int 			decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
 
-#ifdef ARA_USE_GLBASE
-    void 			initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
-
-    inline std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
-
-    inline GLuint	getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
-    inline GLuint	getTexU() { if (m_textures.size() > 1 && m_textures[1]->isAllocated()) return m_textures[1]->getId(); else return 0; }
-    inline GLuint	getTexV() { if (m_textures.size() > 2 && m_textures[2]->isAllocated()) return m_textures[2]->getId(); else return 0; }
-#endif
     ffmpeg::DecodePar                   m_par;
     const AVCodec*      		        m_audioCodec=nullptr;
     AVCodecContext*				        m_videoCodecCtx=nullptr;
@@ -145,23 +122,17 @@ protected:
     struct SwsContext*			        m_imgConvertCtx=nullptr;
     int                                 m_decFramePtr=0;
 
-    enum AVHWDeviceType 		        m_hwDeviceType=(AVHWDeviceType)0;
+    enum AVHWDeviceType 		        m_hwDeviceType{};
     AVBufferRef*				        m_hwDeviceCtx = nullptr;
     int64_t                             m_dstChannelLayout=0;
-    enum AVSampleFormat                 m_dstSampleFmt=(AVSampleFormat)0;
+    enum AVSampleFormat                 m_dstSampleFmt{};
     struct SwrContext*                  m_audioSwrCtx=nullptr;
 
-#ifdef ARA_USE_GLBASE
-    ShaderCollector*		            m_shCol=nullptr;
-    Shaders*				            m_shader=nullptr;
-    std::vector<std::unique_ptr<Texture>> m_textures;
-    std::vector<GLuint>			        m_pbos;
-#endif
 
     const char*                         m_videoCodecName = nullptr;
     std::string                         m_defaultHwDevType;
 
-    AVCodecID					        m_forceAudioCodec=(AVCodecID)0;
+    AVCodecID					        m_forceAudioCodec{};
     std::thread					        m_decodeThread;
     std::mutex					        m_mutex;
     Conditional 	                    m_decodeCond;
@@ -173,15 +144,14 @@ protected:
     std::function<void(audioCbData&)>	m_audioCb;
     std::function<void(AVFrame*)>       m_videoCb;
     std::function<void(uint8_t*)>       m_decodeCb;
+    std::function<void(uint8_t*)>       m_downFrameCb;
 
-    bool						        m_glResInited=false;
     bool						        m_useAudioConversion=false;
     bool						        m_resourcesAllocated=false;
     bool						        m_firstFramePresented=false;
     bool						        m_loop=true;
     bool   		                        m_run=false;
     bool   		                        m_pause=false;
-    bool						        m_usePbos=false; // review memory leaks if using m_pbos....
     bool						        m_isStream=false;
     bool						        m_hasNoTimeStamp=false;
     bool						        m_consumeFrames =false;
@@ -193,20 +163,15 @@ protected:
     int                                 m_videoNrTracks=0;
     int 						        m_audioStreamIndex=0;
     int 						        m_audioNumChannels=0;
-    int 						        m_forceNumChannels=0;
-    int 				                m_forceSampleRate=0;
     int 						        m_dstSampleRate=0;
     int 						        m_dstNumSamples=0;
     int 						        m_maxDstNumSamples=0;
     int 						        m_dstAudioNumChannels=0;
     int 						        m_dstAudioLineSize=0;
-
     int                                 m_scanAllPmtsSet = 0;
     int                                 m_seekByBytes = -1;
     int                                 m_genpts=0;
     int                                 m_fps = 0;
-
-
     int 						        m_srcWidth=0;
     int 						        m_srcHeight=0;
 
@@ -222,7 +187,6 @@ protected:
     uint32_t 				            m_nrFramesToStart=2;
 
     unsigned int				        m_nrPboBufs=3;
-    unsigned int 				        m_pboIndex=0;
     unsigned int 				        m_actFrameNr=0;
     int 				                m_frameToUpload=-1;
 
@@ -232,7 +196,6 @@ protected:
     double 						        m_epsZero=0.000025;
     double						        m_timeBaseDiv=0.0;
     double						        m_frameDur=0.0;
-    double						        m_lastToGlTime=0.0;
 
     std::vector<double>				    m_ptss;
     double						        m_lastPtss=-1.0;
@@ -247,8 +210,6 @@ protected:
     uint32_t					        m_bitCount=8;
     audioCbData					        m_audioCbData;
     uint64_t                            m_videoStartPts=0;
-
-    bool                                m_useMediaCodec = false;
 };
 
 }

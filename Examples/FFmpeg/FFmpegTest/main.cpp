@@ -6,7 +6,7 @@
  */
 
 
-#include <FFMpeg/FFMpegDecodeAudio.h>
+#include "FFMpeg/FFMpegPlayer.h"
 #include <WindowManagement/GLFWWindow.h>
 #include <GeoPrimitives/Quad.h>
 #include <GLBase.h>
@@ -24,7 +24,7 @@ GLBase              glbase;
 Shaders*            stdTex;
 Shaders*            stdCol;
 unique_ptr<Quad>    quad;
-FFMpegDecodeAudio   decoder;
+FFMpegPlayer        decoder;
 unique_ptr<TypoGlyphMap> typo;
 
 int				    winWidth = 1280;
@@ -60,7 +60,13 @@ void init() {
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
-    decoder.OpenFile(&glbase, "trailer_1080p.mov", winWidth, winHeight);
+    decoder.openFile({
+        .glbase = &glbase,
+        .filePath = "trailer_1080p.mov",
+        .destWidth = winWidth,
+        .destHeight = winHeight
+    });
+
     //decoder.openFile(&glbase, "trailer_1080p_nosound.mov", winWidth, winHeight);
     decoder.start(glfwGetTime());
 

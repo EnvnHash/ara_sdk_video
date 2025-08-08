@@ -24,6 +24,10 @@ protected:
     uint8_t*    mediaCodecGetOutputBuffer(int status, size_t& size);
     void        mediaCodecReleaseOutputBuffer(int status);
     void        parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecParameters) override;
+    int32_t     sendPacket(AVPacket* packet, AVCodecContext* codecContext) override;
+    int32_t     checkReceiveFrame(AVCodecContext* codecContext) override;
+    void        transferFromHwToCpu() override;
+    void        clearResources();
 
     std::vector<std::vector<uint8_t>>	m_rawBuffer;
     AMediaExtractor*                    m_mediaExtractor = nullptr;
