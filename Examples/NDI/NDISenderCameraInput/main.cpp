@@ -14,8 +14,8 @@
 #include <libyuv.h>
 
 using namespace std;
-using namespace ara::glb;
-using namespace ara::cap;
+using namespace ara;
+using namespace ara::av;
 
 bool			    printFps = false;
 bool			    inited = false;
@@ -24,7 +24,7 @@ GLFWwindow*		    window = nullptr;
 GLBase              glbase;
 Shaders*            stdTex;
 unique_ptr<Quad>    quad;
-FFMpegDecode        decoder;
+FFMpegDecode        player;
 unique_ptr<Texture> test_png;
 int				    winWidth = 1280;
 int				    winHeight = 800;
@@ -42,16 +42,14 @@ static void output_error(int error, const char* msg)
 	fprintf(stderr, "Error: %s\n", msg);
 }
 
-static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods)
-{
+static void key_callback(GLFWwindow* win, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-	    decoder.stop();
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
+	    player.stop();
+        glfwSetWindowShouldClose(win, GLFW_TRUE);
 	}
 }
 
-void init()
-{
+void init() {
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glbase.init(false);
@@ -67,12 +65,18 @@ void init()
                              1.f, 0.f, 0.f, 1.f,
                              nullptr, 1, true);  // create a Quad, standard width and height (normalized into -1|1), static red
 #ifdef _WIN32
-    decoder.OpenCamera(&glbase, "USB2.0 HD UVC WebCam", winWidth, winHeight, false);
+    player.OpenCamera(&glbase, "USB2.0 HD UVC WebCam", winWidth, winHeight, false);
 #elif __linux__
-    decoder.openCamera(&glbase, "/dev/video0", winWidth, winHeight, false);
+    player.openCamera({
+          .glbase = &glbase,
+          .filePath = "/dev/video0",
+          .destWidth = winWidth,
+          .destHeight = winHeight,
+          .useHwAccel = false
+    });
 #endif
 
-    decoder.setVideoUpdtCb([&](AVFrame* image_data){
+    player.setVideoUpdtCb([&](AVFrame* image_data){
         // AV_PIX_FMT_YUYV422 -> packed YUV 4:2:2, 16bpp, Y0 Cb Y1 Cr
        // if (image_data->format == AV_PIX_FMT_YUYV422)
         //{
@@ -104,7 +108,7 @@ void init()
     });
 
 
-    decoder.start(glfwGetTime());
+    player.start(glfwGetTime());
 }
 
 static void display()
@@ -130,12 +134,12 @@ static void display()
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    decoder.loadFrameToTexture(glfwGetTime());
+    player.loadFrameToTexture(glfwGetTime());
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
+    player.shaderBegin(); // draw with conversion yuv -> rgb on gpu
     quad->draw();
-    // decoder.shaderEnd(); // draw with conversion yuv -> rgb on gpu
+    // player.shaderEnd(); // draw with conversion yuv -> rgb on gpu
 
 	glfwSwapBuffers(window);
 }

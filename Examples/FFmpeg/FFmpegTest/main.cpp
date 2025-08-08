@@ -24,7 +24,7 @@ GLBase              glbase;
 Shaders*            stdTex;
 Shaders*            stdCol;
 unique_ptr<Quad>    quad;
-FFMpegPlayer        decoder;
+FFMpegPlayer        player;
 unique_ptr<TypoGlyphMap> typo;
 
 int				    winWidth = 1280;
@@ -46,7 +46,7 @@ static void output_error(int error, const char* msg) {
 
 static void key_callback(GLFWwindow* win, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-	    decoder.stop();
+	    player.stop();
         glfwSetWindowShouldClose(win, GLFW_TRUE);
 	}
 }
@@ -60,15 +60,15 @@ void init() {
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
-    decoder.openFile({
+    player.openFile({
         .glbase = &glbase,
         .filePath = "trailer_1080p.mov",
         .destWidth = winWidth,
         .destHeight = winHeight
     });
 
-    //decoder.openFile(&glbase, "trailer_1080p_nosound.mov", winWidth, winHeight);
-    decoder.start(glfwGetTime());
+    //player.openFile(&glbase, "trailer_1080p_nosound.mov", winWidth, winHeight);
+    player.start(glfwGetTime());
 
     string vert = STRINGIFY(layout(location = 0) in vec4 position;          \n
         uniform mat4 m_pvm;                                                 \n
@@ -92,11 +92,11 @@ void init() {
 }
 
 void drawBufferStatus() {
-    std::string bFilledLabl = "V-Buffers filled "+std::to_string(decoder.getNrBufferedFrames())+"/"+std::to_string(decoder.getVideoFrameBufferSize());
+    std::string bFilledLabl = "V-Buffers filled " + std::to_string(player.getNrBufferedFrames()) + "/" + std::to_string(player.getVideoFrameBufferSize());
     typo->print(infoBlockLeft, infoBlockTop, bFilledLabl, 18, &tCol[0]);
 
     stdCol->begin();
-    float bufFilled = (float) decoder.getNrBufferedFrames() / (float)(decoder.getVideoFrameBufferSize());
+    float bufFilled = (float) player.getNrBufferedFrames() / (float)(player.getVideoFrameBufferSize());
     stdCol->setIdentMatrix4fv("m_pvm");
     stdCol->setUniform4f("color", 0.f, 1.f, 0.f, 1.f);
     stdCol->setUniform2f("size", bufFilled * barWidth, barHeight);
@@ -106,7 +106,7 @@ void drawBufferStatus() {
 }
 
 void drawAudioWriteBuffer() {
-    std::string decLabl = "A-Write Buffer: "+std::to_string(decoder.getAudioWriteBufIdx());
+    std::string decLabl = "A-Write Buffer: "+std::to_string(player.getAudioWriteBufIdx());
     typo->print(audioInfoBlockLeft, infoBlockTop - barHeight*4, decLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -114,14 +114,14 @@ void drawAudioWriteBuffer() {
     stdCol->setUniform4f("color", 1.f, 0.f, 0.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         audioInfoBlockLeft + lableWidth + (float)decoder.getDecFramePtr() / (float)decoder.getVideoFrameBufferSize() * barWidth*2.f - barWidth,
+                         audioInfoBlockLeft + lableWidth + (float)player.getDecFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight * 2.5);
 
     quad->draw();
 }
 
 void drawAudioReadBuffer() {
-    std::string uplLabl = "A-Read Buffer: "+std::to_string(decoder.getAudioReadBufIdx());
+    std::string uplLabl = "A-Read Buffer: "+std::to_string(player.getAudioReadBufIdx());
     typo->print(audioInfoBlockLeft, infoBlockTop - barHeight*8, uplLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -129,14 +129,14 @@ void drawAudioReadBuffer() {
     stdCol->setUniform4f("color", 0.f, 0.f, 1.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         infoBlockLeft + lableWidth + (float)decoder.getUplFramePtr() / (float)decoder.getVideoFrameBufferSize() * barWidth*2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float)player.getUplFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight*6.5);
 
     quad->draw();
 }
 
 void drawDecodeBufferNr() {
-    std::string decLabl = "V-Decode Buffer: "+std::to_string(decoder.getDecFramePtr());
+    std::string decLabl = "V-Decode Buffer: "+std::to_string(player.getDecFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*4, decLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -144,14 +144,14 @@ void drawDecodeBufferNr() {
     stdCol->setUniform4f("color", 1.f, 0.f, 0.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-                         infoBlockLeft + lableWidth + (float)decoder.getDecFramePtr() / (float)decoder.getVideoFrameBufferSize() * barWidth*2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float)player.getDecFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
                          infoBlockTop - barHeight*2.5);
 
     quad->draw();
 }
 
 void drawFrameToUploadNr() {
-    std::string uplLabl = "V-Upload Buffer: "+std::to_string(decoder.getUplFramePtr());
+    std::string uplLabl = "V-Upload Buffer: "+std::to_string(player.getUplFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*8, uplLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -159,7 +159,7 @@ void drawFrameToUploadNr() {
     stdCol->setUniform4f("color", 0.f, 0.f, 1.f, 1.f);
     stdCol->setUniform2f("size", barHeight, barHeight);
     stdCol->setUniform2f("pos",
-    infoBlockLeft + lableWidth + (float)decoder.getUplFramePtr() / (float)decoder.getVideoFrameBufferSize() * barWidth*2.f - barWidth,
+                         infoBlockLeft + lableWidth + (float)player.getUplFramePtr() / (float)player.getVideoFrameBufferSize() * barWidth * 2.f - barWidth,
     infoBlockTop - barHeight*6.5);
 
     quad->draw();
@@ -187,10 +187,10 @@ static void display() {
     glEnable(GL_BLEND);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    decoder.loadFrameToTexture(glfwGetTime());
+    player.loadFrameToTexture(glfwGetTime());
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
+    player.shaderBegin(); // draw with conversion yuv -> rgb on gpu
     quad->draw();
 
     drawBufferStatus();

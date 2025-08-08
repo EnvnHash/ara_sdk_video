@@ -16,11 +16,10 @@ namespace ara::av {
 
 void FFMpegPlayer::openFile(const ffmpeg::DecodePar& p) {
     FFMpegDecode::openFile(p);
-#ifdef ARA_USE_GLBASE
     if (p.glbase){
         m_shCol = &p.glbase->shaderCollector();
     }
-#endif
+
     try {
         if (m_audioNumChannels > 0) {
             if (!m_paudio.init({
@@ -56,6 +55,13 @@ void FFMpegPlayer::openFile(const ffmpeg::DecodePar& p) {
     } catch (std::runtime_error& e) {
         LOGE << "FFMpegDecodeAudio::openFile Error: " << e.what();
     }
+}
+
+void FFMpegPlayer::openCamera(const ffmpeg::DecodePar& p) {
+    if (p.glbase){
+        m_shCol = &p.glbase->shaderCollector();
+    }
+    FFMpegDecode::openCamera(p);
 }
 
 void FFMpegPlayer::start(double time) {
@@ -122,23 +128,23 @@ void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
 void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
     initShader(srcPixFmt, m_par);
     m_nrTexBuffers = !m_par.decodeYuv420OnGpu ? 1 : (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
-    m_textures = std::vector<std::unique_ptr<Texture>>(m_nrTexBuffers);
+    m_textures = vector<Texture>(m_nrTexBuffers);
 
     for (auto &it : m_textures) {
-        it = make_unique<Texture>(m_par.glbase);
+        it.setGlbase(m_par.glbase);
     }
 
     if (m_par.decodeYuv420OnGpu) {
         if (m_srcPixFmt == AV_PIX_FMT_NV12 || m_srcPixFmt == AV_PIX_FMT_NV21) {
-            m_textures[0]->allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
-            m_textures[1]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_RG8, GL_RG, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[0].allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[1].allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_RG8, GL_RG, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
         } else {   // YUV420P
-            m_textures[0]->allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
-            m_textures[1]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
-            m_textures[2]->allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[0].allocate2D(m_srcWidth, m_srcHeight, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[1].allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+            m_textures[2].allocate2D(m_srcWidth / 2, m_srcHeight / 2, GL_R8, GL_RED, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
         }
     } else {
-        m_textures[0]->allocate2D(m_par.destWidth, m_par.destHeight, GL_RGB8, GL_RGB, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
+        m_textures[0].allocate2D(m_par.destWidth, m_par.destHeight, GL_RGB8, GL_RGB, GL_TEXTURE_2D, GL_UNSIGNED_BYTE);
     }
 }
 
@@ -246,21 +252,21 @@ void FFMpegPlayer::shaderBegin() {
             m_shader->setUniform1i("v_tex_unit", 2); // v
 
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId()); // y
+            glBindTexture(GL_TEXTURE_2D, m_textures[0].getId()); // y
 
             if (m_srcPixFmt == AV_PIX_FMT_YUV420P || m_srcPixFmt == AV_PIX_FMT_NV12) {
                 glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId()); // u
+                glBindTexture(GL_TEXTURE_2D, m_textures[1].getId()); // u
             }
 
             if (m_srcPixFmt == AV_PIX_FMT_YUV420P) {
                 glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId()); // v
+                glBindTexture(GL_TEXTURE_2D, m_textures[2].getId()); // v
             }
         } else {
             m_shader->setUniform1i("tex", 0); // y
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId()); // y
+            glBindTexture(GL_TEXTURE_2D, m_textures[0].getId()); // y
         }
     }
 }
@@ -286,7 +292,7 @@ void FFMpegPlayer::loadFrameToTexture(double time) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
                 if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
                     uploadNvFormat();
-                } else if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty()) {
+                } else if ((AV_PIX_FMT_YUV420P == m_srcPixFmt || AV_PIX_FMT_YUYV422 == m_srcPixFmt) && !m_framePtr.empty() && !m_textures.empty()) {
                     uploadYuv420();
                 }
             } else {
@@ -368,13 +374,13 @@ bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, uint32_t searchInd, dou
 void FFMpegPlayer::uploadNvFormat() {
     // UV interleaved
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[1].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth / 2, m_srcHeight / 2,
                     GL_RG, GL_UNSIGNED_BYTE, m_framePtr[m_frameToUpload]->data[1]);
 
     // Y
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
                     m_framePtr[m_frameToUpload]->data[0]);
@@ -389,7 +395,7 @@ void FFMpegPlayer::uploadYuv420() {
 
     // luminance values, whole picture
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
                     m_framePtr[m_frameToUpload]->data[0]);
@@ -398,14 +404,14 @@ void FFMpegPlayer::uploadYuv420() {
     int chroma_height = m_srcHeight / 2;
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[1].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
                     m_framePtr[m_frameToUpload]->data[1]);
 
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[2].getId());
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
                     ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
                     m_framePtr[m_frameToUpload]->data[2]);
@@ -416,7 +422,7 @@ void FFMpegPlayer::uploadViaPbo() {
     uint nextIndex = (m_pboIndex + 1) % m_nrPboBufs;
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[m_pboIndex]);
 
     glTexSubImage2D(GL_TEXTURE_2D,      // target
@@ -442,7 +448,7 @@ void FFMpegPlayer::uploadViaPbo() {
     glBufferData(GL_PIXEL_UNPACK_BUFFER, m_par.destWidth * m_par.destHeight * 4, nullptr, GL_STREAM_DRAW);
 
     // map the buffer object into client's memory
-    auto ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT);
+    auto ptr = reinterpret_cast<GLubyte *>(glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT));
 
     if (ptr && !m_framePtr.empty())
     {
@@ -459,7 +465,7 @@ void FFMpegPlayer::uploadViaPbo() {
 void FFMpegPlayer::uploadRgba() {
     if (!m_framePtr.empty()) {
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+        glBindTexture(GL_TEXTURE_2D, m_textures[0].getId());
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_par.destWidth, m_par.destHeight,
                         GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame[m_frameToUpload]->data[0]);
     }

@@ -80,7 +80,7 @@ struct DecodePar {
     int         destHeight = 0;
     bool        useHwAccel = true;
     bool        decodeYuv420OnGpu = true;
-    bool        doStart = false;
+    bool        startDecodeThread = false;
     std::string assetName;
 
     std::function<void()> initCb;

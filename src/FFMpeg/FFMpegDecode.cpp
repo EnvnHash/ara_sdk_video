@@ -26,7 +26,7 @@ void FFMpegDecode::openFile(const ffmpeg::DecodePar& p) {
         allocFormatContext();
         checkForNetworkSrc(m_par);
 
-        if (p.doStart) {
+        if (p.startDecodeThread) {
             m_decodeThread = std::thread([this]{
                 m_startTime = 0.0;
                 m_run = true;
@@ -52,6 +52,7 @@ void FFMpegDecode::openCamera(const ffmpeg::DecodePar& p) {
     m_hasNoTimeStamp = true;
     m_isStream = true;
     m_videoFrameBufferSize = 2;
+    m_destPixFmt = AV_PIX_FMT_BGR24;
 
     initFFMpeg();
 
@@ -199,7 +200,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
             localCodecParameters->codec_id = m_forceAudioCodec;
         }
 
-        // finds the registered decoder for a codec ID
+        // finds the registered player for a codec ID
         auto localCodec = getCodecFromId(localCodecParameters->codec_id);
 
         // when the stream is a video we store its index, codec parameters and codec
@@ -246,7 +247,7 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
 
     if (!video_codec) {
         throw m_videoCodecName ? runtime_error("No codec could be found with name "+std::string(m_videoCodecName))
-                               : runtime_error("No decoder could be found for codec "+std::string(avcodec_get_name(m_videoCodecCtx->codec_id)));
+                               : runtime_error("No player could be found for codec "+std::string(avcodec_get_name(m_videoCodecCtx->codec_id)));
     }
 
     m_videoCodecCtx->pkt_timebase = m_formatContext->streams[i]->time_base;
@@ -631,7 +632,7 @@ int32_t FFMpegDecode::convertFrameToCpuFormat(AVCodecContext* codecContext) {
 }
 
 int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecContext) {
-    // Supply raw packet data as input to a decoder
+    // Supply raw packet data as input to a player
     int response = avcodec_send_packet(codecContext, packet);
     if (response < 0) {
         return response;
@@ -644,7 +645,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
         } else if (response == AVERROR_EOF) {
             LOGE << "end of file";
         } else if (response < 0) {
-            LOGE << "Error while receiving a m_frame from the decoder " << err2str(response);
+            LOGE << "Error while receiving a m_frame from the player " << err2str(response);
             return response;
         }
 

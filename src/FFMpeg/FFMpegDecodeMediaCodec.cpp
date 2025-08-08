@@ -54,7 +54,7 @@ bool FFMpegDecodeMediaCodec::openAndroidAsset(const FFMpegDecodePar& p) {
     }
     openAsset(assetDescriptor);
 
-    if (doStart) {
+    if (startDecodeThread) {
         m_decodeThread = std::thread([this, initCb] {
                                          allocateResources();
                                          m_startTime = 0.0;

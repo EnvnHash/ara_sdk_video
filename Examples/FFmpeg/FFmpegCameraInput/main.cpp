@@ -22,7 +22,7 @@ GLFWwindow*		    window = nullptr;
 GLBase              glbase;
 Shaders*            stdTex;
 unique_ptr<Quad>    quad;
-FFMpegDecode        decoder;
+FFMpegPlayer        player;
 int				    winWidth = 1280;
 int				    winHeight = 800;
 double 			    actTime = 0.0;
@@ -35,7 +35,7 @@ static void output_error(int error, const char* msg) {
 
 static void key_callback(GLFWwindow* win, int key, int scancode, int action, int mods) {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-	    decoder.stop();
+	    player.stop();
         glfwSetWindowShouldClose(window, GLFW_TRUE);
 	}
 }
@@ -48,11 +48,18 @@ void init() {
 	quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
 #ifdef _WIN32
-    decoder.OpenCamera(&glbase, "Logi C270 HD WebCam", winWidth, winHeight, false);
+    player.OpenCamera(&glbase, "Logi C270 HD WebCam", winWidth, winHeight, false);
 #elif __linux__
-    decoder.openCamera(&glbase, "/dev/video0", winWidth, winHeight, false);
+    player.openCamera({
+		.glbase = &glbase,
+		.filePath = "/dev/video4", // adjust this to your actual camera connection
+		.destWidth = winWidth,
+		.destHeight = winHeight,
+		.useHwAccel = false,
+		.decodeYuv420OnGpu = false
+	});
 #endif
-    decoder.start(glfwGetTime());
+    player.start(glfwGetTime());
 }
 
 static void display() {
@@ -75,19 +82,18 @@ static void display() {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    decoder.loadFrameToTexture(glfwGetTime());
+    player.loadFrameToTexture(glfwGetTime());
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
+    player.shaderBegin(); // draw with conversion yuv -> rgb on gpu
     quad->draw();
-    // decoder.shaderEnd(); // draw with conversion yuv -> rgb on gpu
+    // player.shaderEnd(); // draw with conversion yuv -> rgb on gpu
 
 	glfwSwapBuffers(window);
 }
 
 int main(int argc, char** argv) {
     glfwSetErrorCallback(output_error);
-
 	if (!glfwInit()) {
 		LOGE << "Failed to initialize GLFW";
 	}
@@ -95,7 +101,7 @@ int main(int argc, char** argv) {
  	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwWindowHint(GLFW_DECORATED, GL_TRUE);
 
-	window = glfwCreateWindow(winWidth, winHeight, "Warping Tool", NULL, NULL);
+	window = glfwCreateWindow(winWidth, winHeight, "FFMpegPlayer Camera Input Example", NULL, NULL);
 	if (!window) {
 		LOGE << "Failed to create GLFW window";
 		glfwTerminate();
@@ -116,7 +122,6 @@ int main(int argc, char** argv) {
 
     ara::initGLEW();
     glViewport(0, 0, winWidth, winHeight);
-
     while (!glfwWindowShouldClose(window)) {
 		display();
         glfwPollEvents();

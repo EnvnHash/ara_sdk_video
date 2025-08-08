@@ -56,20 +56,23 @@ bool VideoView::drawFunc(uint32_t& objId) {
     m_imgFlags = 0;
 
     if (!m_running) {
-        decoder = make_unique<FFMpegDecode>();
+        decoder = make_unique<FFMpegPlayer>();
 
 #ifdef __ANDROID__
         if (!m_asset.empty())
-            decoder->OpenAndroidAsset(m_glbase, getApp()->m_androidApp, m_asset, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), false, true);
+            player->OpenAndroidAsset(m_glbase, getApp()->m_androidApp, m_asset, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), false, true);
         else
-            decoder->OpenFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), false, true);
+            player->OpenFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), false, true);
 #else
-        decoder->openFile(m_glbase, m_url, 4, getWindow()->getWidthReal(), getWindow()->getHeightReal(), true, true);
+        decoder->openFile({
+            .glbase = m_glbase,
+            .filePath = m_url,
+            .useNrThreads = 4,
+            .destWidth = static_cast<int32_t>(getWindow()->getWidthReal()),
+            .destHeight = static_cast<int32_t>(getWindow()->getHeightReal())
+        });
 #endif
-
-        // decoder->openCamera(m_glbase, "/dev/video0", 720, 1280, false);
         decoder->start(0.0);
-
         m_running = true;
         m_timeStart = std::chrono::system_clock::now();
     }
