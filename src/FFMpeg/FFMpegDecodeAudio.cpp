@@ -17,17 +17,15 @@ using namespace std;
 
 namespace ara::av {
 
-int FFMpegDecodeAudio::OpenFile(GLBase* glbase, const std::string& filePath, int destWidth, int destHeight) {
-    // open the file init the decoders, contexts, etc..
-    if (FFMpegDecode::openFile(glbase, filePath, 4, destWidth, destHeight, true, true)) {
-        if (m_audio_nr_channels > 0) {
-            // initialize Portaudio
+void FFMpegDecodeAudio::openFile(const ffmpeg::DecodePar& p) {
+    FFMpegDecode::openFile(p);
+    try {
+        if (m_audioNumChannels > 0) {
             if (!m_paudio.init({
-                .sampleRate = 48000,
-                .numChannels = 2
-            })) {
-                LOGE << "FFMpegDecodeAudio::OpenFile Error could not initialize Portaudio. Aborting";
-                return 0;
+                    .sampleRate = 48000,
+                    .numChannels = 2
+                })) {
+                throw runtime_error("FFMpegDecodeAudio::OpenFile Error could not initialize Portaudio. Aborting");
             }
             m_paudio.printInfo();
 
@@ -35,12 +33,12 @@ int FFMpegDecodeAudio::OpenFile(GLBase* glbase, const std::string& filePath, int
             // if the m_format is not supported, or if the sample m_format is not interleaved float values,
             // we need to set up a sample rate m_converter inside FFMpegDecoder
             bool useConverter = false;
-            int nrChannels = m_audio_nr_channels;
+            auto nrChannels = m_audioNumChannels;
             if (!m_paudio.isNrOutChanSupported(nrChannels)) {
                 useConverter = true;
             }
 
-            int sampleRate = m_audio_codec_ctx->sample_rate;
+            auto sampleRate = m_audioCodecCtx->sample_rate;
             if (sampleRate != m_paudio.getSampleRate()) {
                 useConverter = true;
                 sampleRate = m_paudio.getSampleRate();
@@ -49,17 +47,17 @@ int FFMpegDecodeAudio::OpenFile(GLBase* glbase, const std::string& filePath, int
             setAudioUpdtCb([this](audioCbData& data) { recvAudioPacket(data); });
 
             if (useConverter && !FFMpegDecode::setAudioConverter(sampleRate, AV_SAMPLE_FMT_FLT)) {
-                LOGE << "FFMpegDecodeAudio::openFile Error could not initialize audio m_converter. Aborting";
-                return 0;
+                throw runtime_error("FFMpegDecodeAudio::openFile Error could not initialize audio m_converter. Aborting");
             }
             LOG << " --> Setup Sample Conversion success!!";
         }
+    } catch (std::runtime_error& e) {
+        LOGE << "FFMpegDecodeAudio::openFile Error: " << e.what();
     }
-    return 1;
 }
 
 void FFMpegDecodeAudio::start(double time) {
-    if (m_audio_nr_channels) {
+    if (m_audioNumChannels) {
         m_paudio.start();
     }
     FFMpegDecode::start(time);

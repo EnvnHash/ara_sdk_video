@@ -24,8 +24,7 @@
 
 
 #ifndef ARA_USE_GLBASE
-namespace ara::glb
-{
+namespace ara::glb {
     class GLBase;
 }
 #else
@@ -36,74 +35,27 @@ namespace ara::av {
 
 class FFMpegDecode {
 public:
-    int							        hwDecoderInit(AVCodecContext* ctx, const enum AVHWDeviceType type);
-    int							        openFile(GLBase* glbase, const std::string& filePath, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, const std::function<void()>& initCb=nullptr);
-#ifdef __ANDROID__
-    int							        OpenAndroidAsset(glb::GLBase* glbase, struct android_app* app, std::string& assetName, int useNrThreads, int destWidth, int destHeight, bool useHwAccel, bool decodeYuv420OnGpu, bool doStart=false, std::function<void()> cb=nullptr);
-    int                                 initMediaCode(AAsset* assetDescriptor);
-    int                                 openAsset(AAsset* assetDescriptor);
-    int                                 mediaCodecGetInputBuffer(AVPacket* packet);
-    int                                 mediaCodecDequeueOutputBuffer();
-    uint8_t*                            mediaCodecGetOutputBuffer(int status, size_t& size);
-    void                                mediaCodecReleaseOutputBuffer(int status);
-#endif
-    static int                          readPacketFromInbuf(void *opaque, uint8_t *buf, int buf_size);
-
-    int							        openCamera(GLBase* glbase, const std::string& camName, int destWidth, int destHeight, bool decodeYuv420OnGpu=true);
-    int                                 setupStreams(const AVInputFormat* format, AVDictionary** options, const std::function<void()>& initCb);
-    int                                 allocateResources();
+    virtual void 				        openFile(const ffmpeg::DecodePar& p);
+    virtual void   				        openCamera(const ffmpeg::DecodePar& p);
     static AVDictionary**               setupFindStreamInfoOpts(AVFormatContext *s, AVDictionary *codec_opts);
     static AVDictionary*                filterCodecOpts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s, AVStream *st, AVCodec *codec);
-    static int                          checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec);
 
     virtual void    			        start(double time);
     virtual void 						stop();
     void 						        setPause(bool val) { m_pause = val; }
 
-    void 						        allocGlRes(AVPixelFormat srcPixFmt);
-    static AVFrame*					    allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
-
-    void 						        singleThreadDecodeLoop();
-    int 						        decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
-    int 						        decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
-
     // 2 thread implementation of sending/receiving decoded frames, .... not much faster than the "while" variant
     //void 						        sendFrameLoop();
     //int 						        receiveFrameLoop();
 
-    double  					        getDurationSec();
-    double 						        getFps();
-    int64_t 					        getTotalFrames();
-    static void                         dumpEncoders();
-    static void                         dumpDecoders();
-    [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
-    inline double 						r2d(AVRational r) { return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den; }
-
     void 						        seekFrame(int64_t frame_number, double time);
-    inline void 						seek(double sec, double time) {
-        seekFrame((int64_t) (sec * getFps() + 0.5), time); }
+    inline void 						seek(double sec, double time) { seekFrame((int64_t) (sec * getFps() + 0.5), time); }
     inline void						    resetToStart(double time) { seek(0.0, time); }
 
-    uint8_t*                            reqNextBuf();
-
-#ifdef ARA_USE_GLBASE
-    void 						        initShader(AVPixelFormat srcPixFmt);
-    Shaders*				            getShader() { return m_shader; }
-    void 						        shaderBegin();
-    void 						        shaderEnd() const;
-
-    void 						        loadFrameToTexture(double time);
-    static GLenum						        texture_pixel_format(AVPixelFormat srcFmt);
-
-    inline std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
-    inline GLuint				        getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
-    inline GLuint				        getTexU() { if (m_textures.size() > 1 && m_textures[1]->isAllocated()) return m_textures[1]->getId(); else return 0; }
-    inline GLuint				        getTexV() { if (m_textures.size() > 2 && m_textures[2]->isAllocated()) return m_textures[2]->getId(); else return 0; }
-#endif
     [[nodiscard]] inline bool			isRunning() const { return m_run; }
     [[nodiscard]] inline bool			isReady() const { return m_resourcesAllocated; }
-    [[nodiscard]] inline unsigned short getNrAudioChannels() const{ return m_audio_nr_channels; }
-    [[nodiscard]] inline unsigned short getNrVideoTracks() const{ return m_video_nr_tracks; }
+    [[nodiscard]] inline unsigned short getNrAudioChannels() const{ return m_audioNumChannels; }
+    [[nodiscard]] inline unsigned short getNrVideoTracks() const{ return m_videoNrTracks; }
 
     bool                                setAudioConverter(int destSampleRate, AVSampleFormat format);
     inline void					        setFirstVideoFrameCb(std::function<void()> cbFunc) { m_firstVideoFrameCb = std::move(cbFunc); }
@@ -115,73 +67,100 @@ public:
     inline void					        setVideoFrameBufferSize(int size) { m_videoFrameBufferSize = size; }
 
     inline void                         forceSampleRate(int sr) { m_forceSampleRate = sr; }
-    inline void                         forceNrChannels(int nc) { m_forceNrChannels = nc; }
+    inline void                         forceNrChannels(int nc) { m_forceNumChannels = nc; }
     void                                forceAudioCodec(const std::string& str);
 
     void                                clearResources();
-    bool                                decodeYuv420OnGpu() { return m_decodeYuv420OnGpu; }
+    bool                                decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
+    void 						        shaderBegin();
+    void 						        loadFrameToTexture(double time);
 
+    double  					        getDurationSec();
+    double 						        getFps();
+    int64_t 					        getTotalFrames();
     [[nodiscard]] inline enum AVPixelFormat getSrcPixFmt() const { return m_srcPixFmt; }
     [[nodiscard]] inline int            getNrBufferedFrames() const { return (int)m_nrBufferedFrames; }
-    int                                 getSampleRate() { return m_audio_codec_ctx ? (int)m_audio_codec_ctx->sample_rate : 0; }
+    int                                 getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
     int                                 getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
     int                                 getDecFramePtr() { return m_decFramePtr; }
     int                                 getUplFramePtr() { return m_frameToUpload; }
-   // std::atomic<bool>*                  getAudioQueueBlock() { return &m_audioQueueFull; }
-    int                                 getFrameRateD() { return m_formatContext->streams[m_video_stream_index]->r_frame_rate.den; }
-    int                                 getFrameRateN() { return m_formatContext->streams[m_video_stream_index]->r_frame_rate.num; }
+    int                                 getFrameRateD() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.den; }
+    int                                 getFrameRateN() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.num; }
+    [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
 
-    int 						        m_srcWidth=0;
-    int 						        m_srcHeight=0;
-    int 						        m_destWidth=0;
-    int 						        m_destHeight=0;
-    int 						        m_useNrThreads=4;
-
-    enum AVPixelFormat			        m_srcPixFmt=(AVPixelFormat)0;
-    enum AVPixelFormat			        m_destPixFmt=(AVPixelFormat)0;
-    enum AVPixelFormat			        m_hwPixFmt=(AVPixelFormat)0;
-    static inline enum AVPixelFormat    m_static_hwPixFmt=(AVPixelFormat)0;
-
+#ifdef ARA_USE_GLBASE
+    Shaders* getShader() { return m_shader; }
+#endif
     std::function<void(uint8_t*)>       m_downFrameCb;
 
 protected:
-    AVCodec*					        m_audio_codec=nullptr;
-    AVCodecContext*				        m_video_codec_ctx=nullptr;
-    AVCodecContext*                     m_audio_codec_ctx=nullptr;
+    void            initFFMpeg();
+    void            setupHwDecoding();
+    int				initHwDecode(AVCodecContext* ctx, const enum AVHWDeviceType type);
+    virtual void    setDefaultHwDevice();
+    void            allocFormatContext();
+    void            checkHwDeviceType();
+    void            checkForNetworkSrc(const ffmpeg::DecodePar& p);
+    static int      checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec);
+    bool            setupStreams(const AVInputFormat*, AVDictionary**, ffmpeg::DecodePar& p);
+    void            initStreamInfo();
+    void            parseSeeking();
+    virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
+    virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
+    void            allocateResources(ffmpeg::DecodePar& p);
+
+    void 			allocGlRes(AVPixelFormat srcPixFmt);
+    static AVFrame*	allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<std::vector<uint8_t>>::iterator buf);
+    uint8_t*        reqNextBuf();
+
+    void 			singleThreadDecodeLoop();
+    int 			decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
+    void            transferFromHwToCpu();
+    void            transferFromMediacodecToCpu();
+    int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
+    int 			decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
+
+#ifdef ARA_USE_GLBASE
+    void 			initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
+
+    inline std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
+
+    inline GLuint	getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
+    inline GLuint	getTexU() { if (m_textures.size() > 1 && m_textures[1]->isAllocated()) return m_textures[1]->getId(); else return 0; }
+    inline GLuint	getTexV() { if (m_textures.size() > 2 && m_textures[2]->isAllocated()) return m_textures[2]->getId(); else return 0; }
+#endif
+    ffmpeg::DecodePar                   m_par;
+    const AVCodec*      		        m_audioCodec=nullptr;
+    AVCodecContext*				        m_videoCodecCtx=nullptr;
+    AVCodecContext*                     m_audioCodecCtx=nullptr;
     AVFormatContext*			        m_formatContext=nullptr;
-    AVDictionary*                       m_format_opts=nullptr;
-    AVDictionary*                       m_codec_opts=nullptr;
+    AVDictionary*                       m_formatOpts=nullptr;
+    AVDictionary*                       m_codecOpts=nullptr;
 
     AVFrame*					        m_frame = nullptr;
     AVFrame*					        m_audioFrame = nullptr;
     std::vector<AVFrame*>		        m_framePtr;
     std::vector<AVFrame*>		        m_bgraFrame;
     AVPacket*					        m_packet=nullptr;
-    struct SwsContext*			        m_img_convert_ctx=nullptr;
+    struct SwsContext*			        m_imgConvertCtx=nullptr;
     int                                 m_decFramePtr=0;
 
     enum AVHWDeviceType 		        m_hwDeviceType=(AVHWDeviceType)0;
-    AVBufferRef*				        m_hw_device_ctx = nullptr;
+    AVBufferRef*				        m_hwDeviceCtx = nullptr;
     int64_t                             m_dstChannelLayout=0;
-    enum AVSampleFormat                 m_dst_sample_fmt=(AVSampleFormat)0;
-    struct SwrContext*                  m_audio_swr_ctx=nullptr;
+    enum AVSampleFormat                 m_dstSampleFmt=(AVSampleFormat)0;
+    struct SwrContext*                  m_audioSwrCtx=nullptr;
 
 #ifdef ARA_USE_GLBASE
-    GLBase*		                        m_glbase=nullptr;
     ShaderCollector*		            m_shCol=nullptr;
     Shaders*				            m_shader=nullptr;
     std::vector<std::unique_ptr<Texture>> m_textures;
     std::vector<GLuint>			        m_pbos;
 #endif
 
-    const char*                         m_audio_codec_name = nullptr;
-    const char*                         m_video_codec_name = nullptr;
-    const char*                         m_subtitle_codec_name = nullptr;
-    const char*                         m_forced_audio_codec_name = nullptr;
-    const char*                         m_forced_video_codec_name = nullptr;
+    const char*                         m_videoCodecName = nullptr;
+    std::string                         m_defaultHwDevType;
 
-    std::string					        m_filePath;
-    AVCodecID					        m_forceVideoCodec=(AVCodecID)0;
     AVCodecID					        m_forceAudioCodec=(AVCodecID)0;
     std::thread					        m_decodeThread;
     std::mutex					        m_mutex;
@@ -195,41 +174,45 @@ protected:
     std::function<void(AVFrame*)>       m_videoCb;
     std::function<void(uint8_t*)>       m_decodeCb;
 
-    bool						        m_gl_res_inited=false;
-    bool						        m_useHwAccel=false;
+    bool						        m_glResInited=false;
     bool						        m_useAudioConversion=false;
-    bool						        m_decodeYuv420OnGpu=false;
     bool						        m_resourcesAllocated=false;
     bool						        m_firstFramePresented=false;
     bool						        m_loop=true;
     bool   		                        m_run=false;
     bool   		                        m_pause=false;
     bool						        m_usePbos=false; // review memory leaks if using m_pbos....
-    bool						        m_is_stream=false;
+    bool						        m_isStream=false;
     bool						        m_hasNoTimeStamp=false;
     bool						        m_consumeFrames =false;
     bool						        m_gotFirstVideoFrame =false;
     bool						        m_gotFirstAudioFrame =false;
 
-    //std::atomic<bool>			        m_audioQueueFull =false;
-
     int							        m_logLevel=AV_LOG_INFO;
-    int 						        m_video_stream_index=0;
-    int                                 m_video_nr_tracks=0;
-    int 						        m_audio_stream_index=0;
-    int 						        m_audio_nr_channels=0;
-    int 						        m_forceNrChannels=0;
+    int 						        m_videoStreamIndex=0;
+    int                                 m_videoNrTracks=0;
+    int 						        m_audioStreamIndex=0;
+    int 						        m_audioNumChannels=0;
+    int 						        m_forceNumChannels=0;
     int 				                m_forceSampleRate=0;
     int 						        m_dstSampleRate=0;
     int 						        m_dstNumSamples=0;
-    int 						        m_max_dst_nb_samples=0;
-    int 						        m_dst_audio_nb_channels=0;
+    int 						        m_maxDstNumSamples=0;
+    int 						        m_dstAudioNumChannels=0;
     int 						        m_dstAudioLineSize=0;
 
-    int                                 m_scan_all_pmts_set = 0;
-    int                                 m_seek_by_bytes = -1;
+    int                                 m_scanAllPmtsSet = 0;
+    int                                 m_seekByBytes = -1;
     int                                 m_genpts=0;
     int                                 m_fps = 0;
+
+
+    int 						        m_srcWidth=0;
+    int 						        m_srcHeight=0;
+
+    enum AVPixelFormat			        m_srcPixFmt{};
+    enum AVPixelFormat			        m_destPixFmt = AV_PIX_FMT_BGRA;
+    enum AVPixelFormat			        m_hwPixFmt{};
 
     int64_t                             m_start_time = AV_NOPTS_VALUE;
 
@@ -243,10 +226,10 @@ protected:
     unsigned int 				        m_actFrameNr=0;
     int 				                m_frameToUpload=-1;
 
-    uint8_t**                           m_dst_sampleBuffer=nullptr;
+    uint8_t**                           m_dstSampleBuffer=nullptr;
 
     double 						        m_startTime=0.0;
-    double 						        m_eps_zero=0.000025;
+    double 						        m_epsZero=0.000025;
     double						        m_timeBaseDiv=0.0;
     double						        m_frameDur=0.0;
     double						        m_lastToGlTime=0.0;
@@ -257,23 +240,15 @@ protected:
     unsigned int				        m_totNumFrames=0;
     std::vector<std::vector<uint8_t>>	m_buffer;
     std::vector<uint8_t>                m_memInputBuf;
-    size_t                              m_avio_ctx_buffer_size=4096;
+    size_t                              m_avioCtxBufferSize=4096;
     AVIOContext*                        m_ioContext=nullptr;
-    ffmpeg::memin_buffer_data           m_memin_buffer;
+    ffmpeg::memin_buffer_data           m_meminBuffer;
 
     uint32_t					        m_bitCount=8;
     audioCbData					        m_audioCbData;
     uint64_t                            m_videoStartPts=0;
 
     bool                                m_useMediaCodec = false;
-#ifdef __ANDROID__
-    std::vector<std::vector<uint8_t>>	m_rawBuffer;
-    AMediaExtractor*                    m_mediaExtractor = nullptr;
-    AMediaCodec*                        m_mediaCodec = nullptr;
-    AVBitStreamFilter*                  m_bsf = nullptr;
-    AVBSFContext*                       m_bsfCtx=nullptr;
-    AMediaCodecBufferInfo               m_mediaCodecInfo;
-#endif
 };
 
 }

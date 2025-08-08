@@ -67,8 +67,25 @@ static std::string av_make_error_string(int errnum) {
 #endif // __cplusplus
 #endif // __linux__
 
-namespace ara::av::ffmpeg
-{
+namespace ara {
+    class GLBase;
+}
+
+namespace ara::av::ffmpeg {
+
+struct DecodePar {
+    GLBase*     glbase = nullptr;
+    std::string filePath;
+    int         useNrThreads = 1;
+    int         destWidth = 0;
+    int         destHeight = 0;
+    bool        useHwAccel = true;
+    bool        decodeYuv420OnGpu = true;
+    bool        doStart = false;
+    std::string assetName;
+
+    std::function<void()> initCb;
+};
 
 static std::string m_errStr;
 static std::string m_tStr;
@@ -155,6 +172,95 @@ static inline void dumpDict(AVDictionary* dict, bool printAsError=false) {
             ++i;
         }
     }
+}
+
+static enum AVPixelFormat findFmtByHwType(const enum AVHWDeviceType type) {
+    std::unordered_map<enum AVHWDeviceType, AVPixelFormat> fmtMap{
+        { AV_HWDEVICE_TYPE_VAAPI, AV_PIX_FMT_VAAPI },
+        { AV_HWDEVICE_TYPE_DXVA2, AV_PIX_FMT_DXVA2_VLD },
+        { AV_HWDEVICE_TYPE_D3D11VA, AV_PIX_FMT_D3D11 },
+        { AV_HWDEVICE_TYPE_VDPAU, AV_PIX_FMT_VDPAU },
+        { AV_HWDEVICE_TYPE_QSV, AV_PIX_FMT_QSV },
+        { AV_HWDEVICE_TYPE_VIDEOTOOLBOX, AV_PIX_FMT_VIDEOTOOLBOX },
+        { AV_HWDEVICE_TYPE_MEDIACODEC, AV_PIX_FMT_MEDIACODEC }
+    };
+    return fmtMap.find(type) != fmtMap.end() ? fmtMap[type] : AV_PIX_FMT_NONE;
+}
+
+static inline AVPixelFormat hwFormatToCheck{};
+
+static enum AVPixelFormat getHwFormat(AVCodecContext*, const enum AVPixelFormat *pix_fmts) {
+    const enum AVPixelFormat *p;
+    enum AVPixelFormat ret={AVPixelFormat(0)};
+    bool gotFirst=false;
+    bool found=false;
+
+    for (p = pix_fmts; *p != -1; p++) {
+        if (!gotFirst){
+            ret = *p;
+            gotFirst = true;
+        }
+        if (*p == hwFormatToCheck) {
+            ret = *p;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        LOG << "FFMpegDecode Warning: Didn't find requested HW format. Took default instead";
+    }
+
+    return ret;
+}
+
+static const AVCodec* getCodecFromId(const AVCodecID& id) {
+    auto localCodec = avcodec_find_decoder(id);
+    if (localCodec) {
+        if (localCodec->pix_fmts && localCodec->pix_fmts[0] != -1) {
+            int ind = 0;
+            while (localCodec->pix_fmts[ind] != -1) {
+                LOG << "CODEC possible pix_fmts: " << localCodec->pix_fmts[ind];
+                ++ind;
+            }
+        }
+    }
+
+    return localCodec;
+}
+
+static void dumpEncoders() {
+    const AVCodec *current_codec = nullptr;
+    void *i{};
+    while ((current_codec = av_codec_iterate(&i))) {
+        if (av_codec_is_encoder(current_codec)) {
+            LOG <<  current_codec->name << " " << current_codec->long_name;
+        }
+    }
+}
+
+static void dumpDecoders() {
+    const AVCodec *current_codec = nullptr;
+    void *i{};
+    while ((current_codec = av_codec_iterate(&i))) {
+        if (av_codec_is_decoder(current_codec)) {
+            LOG <<  current_codec->name << " " << (current_codec->long_name ? current_codec->long_name : "");
+        }
+    }
+}
+
+static GLenum getGlColorFormatFromAVPixelFormat(AVPixelFormat srcFmt) {
+    std::unordered_map<AVPixelFormat, int> formatMap {
+            {AV_PIX_FMT_YUV420P, GL_RED},
+            {AV_PIX_FMT_NV12, GL_RED},
+            {AV_PIX_FMT_NV21, GL_RED},
+            {AV_PIX_FMT_RGB24, GL_BGR},
+    };
+    return formatMap[srcFmt];
+}
+
+static double r2d(AVRational r) {
+    return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den;
 }
 
 }

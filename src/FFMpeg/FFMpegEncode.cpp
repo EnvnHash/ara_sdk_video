@@ -180,25 +180,25 @@ bool FFMpegEncode::record()
             m_forceCodec = "h264_vaapi";
         }
 #elif __APPLE__
-        m_ret = av_hwdevice_ctx_create(&m_hw_device_ctx, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nullptr, nullptr, 0);
+        m_ret = av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_VIDEOTOOLBOX, nullptr, nullptr, 0);
         m_hwPixFmt = AV_PIX_FMT_VIDEOTOOLBOX;
         m_hwSwFmt = AV_PIX_FMT_NV12;
         m_forceCodec = "h264_videotoolbox";
 #elif _WIN32
-        m_ret = av_hwdevice_ctx_create(&m_hw_device_ctx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
+        m_ret = av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_CUDA, nullptr, nullptr, 0);
         m_hwPixFmt = AV_PIX_FMT_CUDA;
         m_hwSwFmt = AV_PIX_FMT_NV12;
         m_forceCodec = "h264_nvenc";
 
         if (m_ret < 0) {
-            m_ret = av_hwdevice_ctx_create(&m_hw_device_ctx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
+            m_ret = av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
             m_hwPixFmt = AV_PIX_FMT_D3D11VA_VLD;
             m_hwSwFmt = AV_PIX_FMT_NV12;
             m_forceCodec = "h264_d3d11va2";
         }
 
         if (m_ret < 0) {
-            m_ret = av_hwdevice_ctx_create(&m_hw_device_ctx, AV_HWDEVICE_TYPE_DXVA2, nullptr, nullptr, 0);
+            m_ret = av_hwdevice_ctx_create(&m_hwDeviceCtx, AV_HWDEVICE_TYPE_DXVA2, nullptr, nullptr, 0);
             m_hwPixFmt = AV_PIX_FMT_DXVA2_VLD;
             m_hwSwFmt = AV_PIX_FMT_NV12;
             m_forceCodec = "h264_dxva2";
@@ -790,7 +790,7 @@ void FFMpegEncode::open_audio(AVCodec *codec, FFMpegEncode::OutputStream *ost, A
         return;
     }
 
-    m_dst_samples_size = av_samples_get_buffer_size(NULL, c->channels, m_max_dst_nb_samples, c->sample_fmt, 0);
+    m_dst_samples_size = av_samples_get_buffer_size(nullptr, c->channels, m_max_dst_nb_samples, c->sample_fmt, 0);
 }
 
 AVFrame* FFMpegEncode::get_audio_frame(FFMpegEncode::OutputStream *ost, bool clear)

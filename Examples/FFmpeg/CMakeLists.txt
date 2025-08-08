@@ -6,6 +6,9 @@ if(NOT ANDROID)
     add_subdirectory(FFmpegEncode)
     add_dependencies(FFmpegEncode Utilities GLBase SceneGraph AudioVideo)
 
+    add_subdirectory(FFmpegReencode)
+    add_dependencies(FFmpegReencode Utilities GLBase SceneGraph AudioVideo)
+
     if (NOT BUILD_UNVUE_OSX_BUNDLE)
         add_subdirectory(FFmpegCameraInput)
         add_dependencies(FFmpegCameraInput Utilities GLBase SceneGraph AudioVideo)

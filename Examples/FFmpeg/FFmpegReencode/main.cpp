@@ -16,7 +16,7 @@ using namespace std;
 using namespace ara;
 using namespace ara::av;
 
-bool			    printFps = false;
+bool			    printFps = true;
 bool			    inited = false;
 
 GLFWwindow*		    window = nullptr;
@@ -60,8 +60,12 @@ void init() {
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
-    decoder.OpenFile(&glbase, "trailer_1080p.mov", winWidth, winHeight);
-    //decoder.openFile(&glbase, "trailer_1080p_nosound.mov", winWidth, winHeight);
+    decoder.openFile({
+        .glbase = &glbase,
+        .filePath = "trailer_1080p.mov",
+        .destWidth = winWidth,
+        .destHeight = winHeight
+    });
     decoder.start(glfwGetTime());
 
     string vert = STRINGIFY(layout(location = 0) in vec4 position;          \n
@@ -164,7 +168,7 @@ static void display() {
 
 	// check Framerate every 2 seconds
 	if (printFps) {
-		double newTimeFmod = std::fmod(glfwGetTime(), 2.0);
+		double newTimeFmod = std::fmod(glfwGetTime(), 1.0);
 		if (newTimeFmod < timeFmod) {
 			printf("dt: %f fps: %f \n", dt, 1.0 / dt);
 		}
@@ -226,7 +230,7 @@ int main(int argc, char** argv) {
 	glfwSetWindowPos(window, 0, 0);
 	glfwShowWindow(window);
 	glfwMakeContextCurrent(window);
-	glfwSwapInterval(1);
+	glfwSwapInterval(0);
 
 	LOG << "Vendor:   " << glGetString(GL_VENDOR);
 	LOG << "Renderer: " << glGetString(GL_RENDERER);
