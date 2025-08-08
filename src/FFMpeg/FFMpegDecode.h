@@ -102,6 +102,7 @@ protected:
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
     int32_t         parseReceivedFrame(AVCodecContext* codecContext);
+    void            incrementCounters();
     virtual void    transferFromHwToCpu();
     int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
     int 			decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);

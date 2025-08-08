@@ -568,6 +568,11 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
         m_videoCb(m_framePtr[m_decFramePtr]);
     }
 
+    incrementCounters();
+    return -1; // break loop
+}
+
+void FFMpegDecode::incrementCounters() {
     m_mutex.lock();
 
     m_ptss[m_decFramePtr] = m_timeBaseDiv * (double) m_framePtr[m_decFramePtr]->pts;
@@ -595,7 +600,6 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
 
     m_decFramePtr = ++m_decFramePtr % m_videoFrameBufferSize;
     m_mutex.unlock();
-    return -1; // break loop
 }
 
 void FFMpegDecode::transferFromHwToCpu() {

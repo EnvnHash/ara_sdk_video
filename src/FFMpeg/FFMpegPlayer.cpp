@@ -121,14 +121,9 @@ void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
 
 void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
     initShader(srcPixFmt, m_par);
-
-    if (m_par.decodeYuv420OnGpu) {
-        m_nrTexBuffers = (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
-    } else {
-        m_nrTexBuffers = 1;
-    }
-
+    m_nrTexBuffers = !m_par.decodeYuv420OnGpu ? 1 : (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
     m_textures = std::vector<std::unique_ptr<Texture>>(m_nrTexBuffers);
+
     for (auto &it : m_textures) {
         it = make_unique<Texture>(m_par.glbase);
     }
@@ -148,82 +143,95 @@ void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
 }
 
 void FFMpegPlayer::initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p) {
-    if (p.decodeYuv420OnGpu && !m_shCol->hasShader("FFMpegDecode_yuv")) {
-        auto shdr_Header = ara::ShaderCollector::getShaderHeader();
+    if (p.decodeYuv420OnGpu) {
+        std::string vert = ShaderCollector::getShaderHeader() + "// yuv420 texture shader, vert\n" + getVertShader();
+        std::string frag = getFragShaderHeader();
 
-        std::string vert = STRINGIFY( layout(location = 0) in vec4 position;    \n
-                                              layout(location = 2) in vec2 texCoord;                              \n
-                                              uniform mat4 m_pvm;                                                 \n
-                                              out vec2 tex_coord;                                                 \n
-                                              void main() {                                                       \n
-                                              \t tex_coord = texCoord;                                        \n
-                                              \t gl_Position = m_pvm * position;                              \n
-                                      });
-        vert = shdr_Header + "// yuv420 texture shader, vert\n"  + vert;
-
-        // YUV420 is a planar (non-packed) m_format.
-        // the first plane is the Y with one byte per pixel.
-        // the second plane us U with one byte for each 2x2 square of pixels
-        // the third plane is V with one byte for each 2x2 square of pixels
-        //
-        // tex_unit - contains the Y (luminance) component of the
-        //    image. this is a texture unit set up by the OpenGL program.
-        // u_texture_unit, v_texture_unit - contain the chrominance parts of
-        //    the image. also texture units  set up by the OpenGL program.
-        std::string frag = STRINGIFY(uniform sampler2D tex_unit; \n // Y component
-                                             uniform sampler2D u_tex_unit; \n // U component
-                                             uniform sampler2D v_tex_unit; \n // V component
-                                             uniform float alpha; \n // V component
-                                             \n
-                                             in vec2 tex_coord; \n
-                                             layout(location = 0) out vec4 fragColor; \n
-                                             void main() { \n);
-
-        // NV12
         if (srcPixFmt == AV_PIX_FMT_NV12) {
-            frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
-                                      float u = texture(u_tex_unit, tex_coord).r - 0.5; \n
-                                      float v = texture(u_tex_unit, tex_coord).g - 0.5; \n
-
-                                      fragColor = vec4(
-                              (vec3(y + 1.4021 * v, \n
-                                      y - 0.34482 * u - 0.71405 * v, \n
-                                      y + 1.7713 * u)
-                                      - 0.05) * 1.07, \n
-                                      alpha); \n
-            );
+            frag += getNv12FragShader();
         } else if (srcPixFmt == AV_PIX_FMT_NV21) {
-            frag += STRINGIFY(float y = texture(tex_unit, tex_coord).r; \n
-                                      float u = texture(u_tex_unit, tex_coord).g - 0.5; \n
-                                      float v = texture(u_tex_unit, tex_coord).r - 0.5; \n
-
-                                      fragColor = vec4(
-                              (vec3(y + 1.4021 * v, \n
-                                      y - 0.34482 * u - 0.71405 * v, \n
-                                      y + 1.7713 * u)
-                                      - 0.05) * 1.07, \n
-                                      alpha); \n
-            );
+            frag += getNv21FragShader();
         } else {
-            // YUV420P
-            frag += STRINGIFY(
-                    float y = texture(tex_unit, tex_coord).r; \n
-                    float u = texture(u_tex_unit, tex_coord).r - 0.5; \n
-                    float v = texture(v_tex_unit, tex_coord).r - 0.5; \n
-
-                    float r = y + 1.402 * v; \n
-                    float g = y - 0.344 * u - 0.714 * v; \n
-                    float b = y + 1.772 * u; \n
-
-                    fragColor = vec4(vec3(r, g, b), alpha); \n);
+            frag += getYuv420FragShader();
         }
 
         frag += "}";
-        frag = shdr_Header + "// YUV420 fragment shader\n"  + frag;
+        frag = ShaderCollector::getShaderHeader() + "// YUV420 fragment shader\n"  + frag;
+
         m_shader = m_shCol->add("FFMpegDecode_yuv", vert, frag);
     } else {
         m_shader = m_shCol->getStdTexAlpha();
     }
+}
+
+std::string FFMpegPlayer::getVertShader() {
+    return STRINGIFY(  layout(location = 0) in vec4 position;    \n
+                       layout(location = 2) in vec2 texCoord;    \n
+                       uniform mat4 m_pvm;                       \n
+                       out vec2 tex_coord;                       \n
+                       void main() {                             \n
+                       \t tex_coord = texCoord;                  \n
+                       \t gl_Position = m_pvm * position;        \n
+               });
+}
+
+std::string FFMpegPlayer::getFragShaderHeader() {
+    return STRINGIFY(uniform sampler2D tex_unit; \n // Y component
+                      uniform sampler2D u_tex_unit; \n // U component
+                      uniform sampler2D v_tex_unit; \n // V component
+                      uniform float alpha; \n // V component
+                      \n
+                      in vec2 tex_coord; \n
+                      layout(location = 0) out vec4 fragColor; \n
+                      void main() { \n);
+}
+
+std::string FFMpegPlayer::getNv12FragShader() {
+    return STRINGIFY(float y = texture(tex_unit, tex_coord).r;              \n
+                     float u = texture(u_tex_unit, tex_coord).r - 0.5;      \n
+                     float v = texture(u_tex_unit, tex_coord).g - 0.5;      \n
+
+                     fragColor = vec4((vec3(y + 1.4021 * v,                 \n
+                                            y - 0.34482 * u - 0.71405 * v,  \n
+                                            y + 1.7713 * u)                 \n
+                                       - 0.05) * 1.07,                      \n
+                                      alpha);                               \n
+    );
+}
+
+std::string FFMpegPlayer::getNv21FragShader() {
+    return STRINGIFY(
+            float y = texture(tex_unit, tex_coord).r;             \n
+            float u = texture(u_tex_unit, tex_coord).g - 0.5;     \n
+            float v = texture(u_tex_unit, tex_coord).r - 0.5;     \n
+            fragColor = vec4((vec3(y + 1.4021 * v,                \n
+                                   y - 0.34482 * u - 0.71405 * v, \n
+                                   y + 1.7713 * u)                \n
+                                   - 0.05) * 1.07,                \n
+                              alpha);                             \n);
+}
+
+std::string FFMpegPlayer::getYuv420FragShader() {
+    // YUV420 is a planar (non-packed) m_format.
+    // the first plane is the Y with one byte per pixel.
+    // the second plane us U with one byte for each 2x2 square of pixels
+    // the third plane is V with one byte for each 2x2 square of pixels
+    //
+    // tex_unit - contains the Y (luminance) component of the
+    //    image. this is a texture unit set up by the OpenGL program.
+    // u_texture_unit, v_texture_unit - contain the chrominance parts of
+    //    the image. also texture units  set up by the OpenGL program.
+
+    return STRINGIFY(
+        float y = texture(tex_unit, tex_coord).r;           \n
+        float u = texture(u_tex_unit, tex_coord).r - 0.5;   \n
+        float v = texture(v_tex_unit, tex_coord).r - 0.5;   \n
+
+        float r = y + 1.402 * v;                            \n
+        float g = y - 0.344 * u - 0.714 * v;                \n
+        float b = y + 1.772 * u;                            \n
+
+        fragColor = vec4(vec3(r, g, b), alpha); \n);
 }
 
 void FFMpegPlayer::shaderBegin() {
@@ -258,217 +266,204 @@ void FFMpegPlayer::shaderBegin() {
 }
 
 void FFMpegPlayer::loadFrameToTexture(double time) {
-        if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1) {
-            double actRelTime = time - m_startTime + ((double)m_videoStartPts * m_timeBaseDiv);
-            uint searchInd = (m_frameToUpload +1) % m_videoFrameBufferSize;
-            bool uploadNewFrame = false;
+    if (m_resourcesAllocated && m_run && !m_pause && m_nrBufferedFrames >= 1) {
+        auto actRelTime = time - m_startTime + static_cast<double>(m_videoStartPts) * m_timeBaseDiv;
+        auto searchInd = (m_frameToUpload +1) % m_videoFrameBufferSize;
 
-            if (!m_glResInited && m_srcWidth && m_srcHeight) {
-                allocGlRes(m_srcPixFmt);
-                m_glResInited = true;
-            }
+        if (!m_glResInited && m_srcWidth && m_srcHeight) {
+            allocGlRes(m_srcPixFmt);
+            m_glResInited = true;
+        }
 
-            if (!m_glResInited) {
-                return;
-            }
+        if (calcFrameToUpload(actRelTime, searchInd, time)
+            && m_frameToUpload > -1
+            && m_consumeFrames
+            && m_framePtr[m_frameToUpload]->width
+            && m_framePtr[m_frameToUpload]->height) {
+            m_mutex.lock();
 
-            // check for the first frame or a frame with a pts close to the actual time
-            if (!m_hasNoTimeStamp) {
-                while (searchInd < (uint) m_videoFrameBufferSize) {
-                    if (!m_firstFramePresented) {
-                        if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_isStream) {
-                            m_firstFramePresented = true;
-                            m_startTime = time;
-                            m_frameToUpload = searchInd % m_videoFrameBufferSize;
-                            m_consumeFrames = true;
-                            uploadNewFrame = true;
-                            break;
-                        }
-                    } else {
-                        // if we have a timestamp with a pts that differs less than 25% of a frame duration, present it
-                        if (std::fabs(m_ptss[searchInd % m_videoFrameBufferSize] - actRelTime) < (m_frameDur * 0.25)
-                            || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0 && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime)) {
-                            // if we are playing in loop mode and reached the last m_frame, reset the m_startTime
-                            if ((uint) (m_ptss[searchInd % m_videoFrameBufferSize] / m_frameDur) == (m_totNumFrames - 1)) {
-                                m_startTime = time;
-                            }
-
-                            int newFrameInd = searchInd % m_videoFrameBufferSize;
-                            uploadNewFrame = newFrameInd != m_frameToUpload;
-                            m_frameToUpload = newFrameInd;
-                            break;
-                        }
-                    }
-
-                    // check if there are frames that are too old
-                    ++searchInd;
+            if (m_par.decodeYuv420OnGpu) {
+                glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
+                    uploadNvFormat();
+                } else if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty()) {
+                    uploadYuv420();
                 }
-            }
-            else
-            {
-                // in case there is no timestamp just take the framerate to offset
-                if (!m_consumeFrames && (int)m_nrBufferedFrames >= m_nrFramesToStart) {
-                    m_consumeFrames = true;
-                    m_startTime = time;
-                    actRelTime = 0.0;
-                }
-
-                uploadNewFrame = m_consumeFrames && m_nrBufferedFrames > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
-                if (uploadNewFrame) {
-                    actRelTime = time - m_startTime;
-                    ++m_frameToUpload %= m_videoFrameBufferSize;
-
-                    /* // hypothetical frameNumber in relation to the actual time
-                     int newFrameNr = (int)(actRelTime * (double) m_fps) % m_videoFrameBufferSize;
-                     if (newFrameNr != m_frameToUpload)
-                     {
-                         //LOG << "m_consumeFrames actRelTime " << actRelTime << " newFrameNr " << newFrameNr;
-                         m_frameToUpload = newFrameNr;
-                         uploadNewFrame = true;
-                         LOG << "up frame " <<  m_frameToUpload;
-                         if (m_frameToUpload == m_decFramePtr)
-                             LOGE << " read write same frame";
-
-                         if (!m_framePtr[m_frameToUpload]->width){
-                             LOGE << "trying to upload invalid frame!!!";
-                             uploadNewFrame = false;
-                             m_nrBufferedFrames--;
-
-                         }
-                     }*/
-                }
-            }
-
-            if (m_frameToUpload > -1
-                && m_consumeFrames
-                && uploadNewFrame
-                && m_framePtr[m_frameToUpload]->width
-                && m_framePtr[m_frameToUpload]->height) {
-                m_mutex.lock();
-
-                if (m_par.decodeYuv420OnGpu) {
-                    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-                    if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_framePtr.empty()) {
-                        // UV interleaved
-                        glActiveTexture(GL_TEXTURE1);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth / 2, m_srcHeight / 2,
-                                        GL_RG, GL_UNSIGNED_BYTE, m_framePtr[m_frameToUpload]->data[1]);
-
-                        // Y
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
-                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                                        m_framePtr[m_frameToUpload]->data[0]);
-                    }
-
-                    // if the video is encoded as YUV420 it's in three separate areas in
-                    // memory (planar-- not interlaced). so if we have three areas of
-                    // data, set up one texture unit for each one. in the if statement
-                    // we'll set up the texture units for chrominance (U & V) and we'll
-                    // put the luminance (Y) data in GL_TEXTURE0 after the if.
-
-                    if (AV_PIX_FMT_YUV420P == m_srcPixFmt && !m_framePtr.empty() && !m_textures.empty()) {
-                        // luminance values, whole picture
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
-                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                                        m_framePtr[m_frameToUpload]->data[0]);
-
-                        int chroma_width = m_srcWidth / 2;
-                        int chroma_height = m_srcHeight / 2;
-
-                        glActiveTexture(GL_TEXTURE1);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
-                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                                        m_framePtr[m_frameToUpload]->data[1]);
-
-
-                        glActiveTexture(GL_TEXTURE2);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId());
-                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
-                                        ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
-                                        m_framePtr[m_frameToUpload]->data[2]);
-                    }
+            } else {
+                if (m_usePbos) {
+                    uploadViaPbo();
                 } else {
-                    if (m_usePbos) {
-                        m_pboIndex = (m_pboIndex + 1) % m_nrPboBufs;
-                        uint nextIndex = (m_pboIndex + 1) % m_nrPboBufs;
-
-                        glActiveTexture(GL_TEXTURE0);
-                        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[m_pboIndex]);
-
-                        glTexSubImage2D(GL_TEXTURE_2D,      // target
-                                        0,                      // First mipmap level
-                                        0, 0,                   // x and y offset
-                                        m_par.destWidth,              // width and height
-                                        m_par.destHeight,
-                                        GL_BGR,
-                                        GL_UNSIGNED_BYTE,
-                                        nullptr);
-
-
-                        // bind PBO to update texture source
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[nextIndex]);
-
-                        // Note that glMapBufferARB() causes sync issue.
-                        // If GPU is working with this buffer, glMapBufferARB() will wait(stall)
-                        // until GPU to finish its job. To avoid waiting (idle), you can call
-                        // first glBufferDataARB() with nullptr pointer before glMapBufferARB().
-                        // If you do that, the previous data in PBO will be discarded and
-                        // glMapBufferARB() returns a new allocated pointer immediately
-                        // even if GPU is still working with the previous data.
-                        glBufferData(GL_PIXEL_UNPACK_BUFFER, m_par.destWidth * m_par.destHeight * 4, nullptr, GL_STREAM_DRAW);
-
-                        // map the buffer object into client's memory
-                        auto ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT);
-
-                        if (ptr && !m_framePtr.empty())
-                        {
-                            // update data directly on the mapped buffer
-                            memcpy(ptr, m_bgraFrame[m_frameToUpload]->data[0], m_par.destWidth * m_par.destHeight * 4);
-                            glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
-                        }
-
-                        // it is good idea to release PBOs with ID 0 after use.
-                        // Once bound with 0, all pixel operations are back to normal ways.
-                        glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-
-                    } else {
-                        if (!m_framePtr.empty()) {
-                            glActiveTexture(GL_TEXTURE0);
-                            glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
-                            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_par.destWidth, m_par.destHeight,
-                                            GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame[m_frameToUpload]->data[0]);
-                        }
-                    }
-
-                    if (m_downFrameCb) {
-                        m_downFrameCb(m_bgraFrame[m_frameToUpload]->data[0]);
-                    }
+                    uploadRgba();
                 }
-
-                // mark as consumed
-                m_framePtr[m_frameToUpload]->pts = -1;
-
-                if (m_nrBufferedFrames > 0) {
-                    --m_nrBufferedFrames;
-                    //LOG <<  "-- " << m_nrBufferedFrames;
-                } else {
-                    //LOGE << " not enough frames buffered";
+                if (m_downFrameCb) {
+                    m_downFrameCb(m_bgraFrame[m_frameToUpload]->data[0]);
                 }
-
-                m_mutex.unlock();
-                m_decodeCond.notify();     // wait until the packet was needed
-                m_lastToGlTime = time;
             }
+
+            // mark as consumed
+            m_framePtr[m_frameToUpload]->pts = -1;
+            if (m_nrBufferedFrames > 0) {
+                --m_nrBufferedFrames;
+            }
+            m_mutex.unlock();
+            m_decodeCond.notify();     // wait until the packet was needed
+            m_lastToGlTime = time;
         }
     }
+}
+
+bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, uint32_t searchInd, double time) {
+    bool uploadNewFrame = false;
+
+    // check for the first frame or a frame with a pts close to the actual time
+    if (!m_hasNoTimeStamp) {
+        while (searchInd < static_cast<uint32_t>(m_videoFrameBufferSize)) {
+            if (!m_firstFramePresented) {
+                if ((m_ptss[searchInd % m_videoFrameBufferSize] == m_videoStartPts) || m_isStream) {
+                    m_firstFramePresented = true;
+                    m_startTime = time;
+                    m_frameToUpload = searchInd % m_videoFrameBufferSize;
+                    m_consumeFrames = true;
+                    uploadNewFrame = true;
+                    break;
+                }
+            } else {
+                // if we have a timestamp with a pts that differs less than 25% of a frame duration, present it
+                if (std::fabs(m_ptss[searchInd % m_videoFrameBufferSize] - actRelTime) < (m_frameDur * 0.25)
+                    || (m_ptss[searchInd % m_videoFrameBufferSize] != -1.0
+                        && m_ptss[searchInd % m_videoFrameBufferSize] < actRelTime)) {
+                    // if we are playing in loop mode and reached the last m_frame, reset the m_startTime
+                    if (static_cast<uint32_t>(m_ptss[searchInd % m_videoFrameBufferSize] / m_frameDur) == (m_totNumFrames - 1)) {
+                        m_startTime = time;
+                    }
+
+                    int newFrameInd = searchInd % m_videoFrameBufferSize;
+                    uploadNewFrame = newFrameInd != m_frameToUpload;
+                    m_frameToUpload = newFrameInd;
+                    break;
+                }
+            }
+
+            // check if there are frames that are too old
+            ++searchInd;
+        }
+    } else {
+        // in case there is no timestamp just take the framerate to offset
+        if (!m_consumeFrames && static_cast<int>(m_nrBufferedFrames) >= m_nrFramesToStart) {
+            m_consumeFrames = true;
+            m_startTime = time;
+            actRelTime = 0.0;
+        }
+
+        uploadNewFrame = m_consumeFrames && m_nrBufferedFrames > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
+        if (uploadNewFrame) {
+            actRelTime = time - m_startTime;
+            ++m_frameToUpload %= m_videoFrameBufferSize;
+        }
+    }
+
+    return uploadNewFrame;
+}
+
+void FFMpegPlayer::uploadNvFormat() {
+    // UV interleaved
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth / 2, m_srcHeight / 2,
+                    GL_RG, GL_UNSIGNED_BYTE, m_framePtr[m_frameToUpload]->data[1]);
+
+    // Y
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
+                    ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                    m_framePtr[m_frameToUpload]->data[0]);
+}
+
+void FFMpegPlayer::uploadYuv420() {
+    // if the video is encoded as YUV420 it's in three separate areas in
+    // memory (planar-- not interlaced). so if we have three areas of
+    // data, set up one texture unit for each one. in the if statement
+    // we'll set up the texture units for chrominance (U & V) and we'll
+    // put the luminance (Y) data in GL_TEXTURE0 after the if.
+
+    // luminance values, whole picture
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_srcWidth, m_srcHeight,
+                    ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                    m_framePtr[m_frameToUpload]->data[0]);
+
+    int chroma_width = m_srcWidth / 2;
+    int chroma_height = m_srcHeight / 2;
+
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, m_textures[1]->getId());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
+                    ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                    m_framePtr[m_frameToUpload]->data[1]);
+
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, m_textures[2]->getId());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, chroma_width, chroma_height,
+                    ffmpeg::getGlColorFormatFromAVPixelFormat(m_srcPixFmt), GL_UNSIGNED_BYTE,
+                    m_framePtr[m_frameToUpload]->data[2]);
+}
+
+void FFMpegPlayer::uploadViaPbo() {
+    m_pboIndex = (m_pboIndex + 1) % m_nrPboBufs;
+    uint nextIndex = (m_pboIndex + 1) % m_nrPboBufs;
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[m_pboIndex]);
+
+    glTexSubImage2D(GL_TEXTURE_2D,      // target
+                    0,                      // First mipmap level
+                    0, 0,                   // x and y offset
+                    m_par.destWidth,              // width and height
+                    m_par.destHeight,
+                    GL_BGR,
+                    GL_UNSIGNED_BYTE,
+                    nullptr);
+
+
+    // bind PBO to update texture source
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, m_pbos[nextIndex]);
+
+    // Note that glMapBufferARB() causes sync issue.
+    // If GPU is working with this buffer, glMapBufferARB() will wait(stall)
+    // until GPU to finish its job. To avoid waiting (idle), you can call
+    // first glBufferDataARB() with nullptr pointer before glMapBufferARB().
+    // If you do that, the previous data in PBO will be discarded and
+    // glMapBufferARB() returns a new allocated pointer immediately
+    // even if GPU is still working with the previous data.
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, m_par.destWidth * m_par.destHeight * 4, nullptr, GL_STREAM_DRAW);
+
+    // map the buffer object into client's memory
+    auto ptr = (GLubyte *) glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, m_par.destWidth * m_par.destHeight * 4, GL_MAP_WRITE_BIT);
+
+    if (ptr && !m_framePtr.empty())
+    {
+        // update data directly on the mapped buffer
+        memcpy(ptr, m_bgraFrame[m_frameToUpload]->data[0], m_par.destWidth * m_par.destHeight * 4);
+        glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+    }
+
+    // it is good idea to release PBOs with ID 0 after use.
+    // Once bound with 0, all pixel operations are back to normal ways.
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+}
+
+void FFMpegPlayer::uploadRgba() {
+    if (!m_framePtr.empty()) {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_textures[0]->getId());
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_par.destWidth, m_par.destHeight,
+                        GL_BGR, GL_UNSIGNED_BYTE, m_bgraFrame[m_frameToUpload]->data[0]);
+    }
+}
 
 void FFMpegPlayer::clearResources() {
     FFMpegDecode::clearResources();

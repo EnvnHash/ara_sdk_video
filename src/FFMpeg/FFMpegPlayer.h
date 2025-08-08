@@ -19,25 +19,36 @@ public:
     void openFile(const ffmpeg::DecodePar& p) override;
     void start(double time) override;
     void stop() override;
-    void recvAudioPacket(audioCbData& data);
     void shaderBegin();
     void loadFrameToTexture(double time);
-    void clearResources() override;
 
     int32_t     getAudioWriteBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getWritePos() : 0; }
     int32_t     getAudioReadBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getReadPos() : 0; }
     Shaders*    getShader() { return m_shader; }
 
 private:
+    void recvAudioPacket(audioCbData& data);
     void allocateResources(ffmpeg::DecodePar& p) override;
     void allocGlRes(AVPixelFormat srcPixFmt);
     void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
+    bool calcFrameToUpload(double& actRelTime, uint32_t searchInd, double time);
+    void uploadNvFormat();
+    void uploadYuv420();
+    void uploadViaPbo();
+    void uploadRgba();
+    void clearResources() override;
 
-    inline std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
+    std::string getVertShader();
+    std::string getFragShaderHeader();
+    std::string getNv12FragShader();
+    std::string getNv21FragShader();
+    std::string getYuv420FragShader();
 
-    inline GLuint	getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
-    inline GLuint	getTexU() { if (m_textures.size() > 1 && m_textures[1]->isAllocated()) return m_textures[1]->getId(); else return 0; }
-    inline GLuint	getTexV() { if (m_textures.size() > 2 && m_textures[2]->isAllocated()) return m_textures[2]->getId(); else return 0; }
+    std::vector<std::unique_ptr<Texture>>& getTextures() { return m_textures; }
+
+    GLuint getTex() {  if (!m_textures.empty() && m_textures[0]->isAllocated()) return m_textures[0]->getId(); else return 0; }
+    GLuint getTexU() { if (m_textures.size() > 1 && m_textures[1]->isAllocated()) return m_textures[1]->getId(); else return 0; }
+    GLuint getTexV() { if (m_textures.size() > 2 && m_textures[2]->isAllocated()) return m_textures[2]->getId(); else return 0; }
 
     Portaudio m_paudio;
     uint32_t  m_cycBufSize = 128; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
