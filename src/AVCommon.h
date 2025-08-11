@@ -16,6 +16,7 @@ public:
     uint8_t** buffer=nullptr;
     uint32_t sampleRate=0;
     int32_t sampleFmt=0;
+    double ptss=0;
 };
 
 }

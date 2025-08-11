@@ -12,6 +12,7 @@
 
 using namespace glm;
 using namespace std;
+using namespace ara::av::ffmpeg;
 
 namespace ara::av {
 
@@ -51,6 +52,10 @@ void FFMpegPlayer::openFile(const ffmpeg::DecodePar& p) {
             if (useConverter && !FFMpegDecode::setAudioConverter(sampleRate, AV_SAMPLE_FMT_FLT)) {
                 throw runtime_error("FFMpegDecodeAudio::openFile Error could not initialize audio m_converter. Aborting");
             }
+
+            m_silenceAudioBuf.resize(m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
+            std::ranges::fill(m_silenceAudioBuf, 0.f);
+
             LOG << " --> Setup Sample Conversion success!!";
         }
     } catch (std::runtime_error& e) {
@@ -87,13 +92,23 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
     }
 
     if (static_cast<AVSampleFormat>(data.sampleFmt) != AV_SAMPLE_FMT_FLT) {
-        LOGE << "FFmpegDecodeAudio::recvAudioPacket Error. Wrong sample format!";
+        LOGE << "FFMpegDecodeAudio::recvAudioPacket Error. Wrong sample format!";
         return;
     }
 
     while (m_paudio.getCycleBuffer().getFreeSpace() < m_bufSizeFact) {
         LOGE << "overflow!!!";
         std::this_thread::sleep_for(1ms);
+    }
+
+    // in case there is a negative difference between the audio and video stream duration,
+    // and we just came across the loop point, and the difference in duration as silence into the cycle buffer
+    if (m_audioToVideoDurationDiff > 0
+        && m_firstFramePresented && m_lastPtss[toType(streamType::audio)] > data.ptss) {
+        auto addNumSilenceFrames = static_cast<int32_t>((m_audioToVideoDurationDiff * m_paudio.getSampleRate()) / m_paudio.getFramesPerBuffer());
+        for (size_t i=0; i<addNumSilenceFrames; i++) {
+            m_paudio.getCycleBuffer().feed(m_silenceAudioBuf.data());
+        }
     }
 
     // copy the new audio frame to Portaudio internal CycleBuffer
@@ -103,6 +118,8 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
     for (size_t i=0; i<m_bufSizeFact; i++) {
         m_paudio.getCycleBuffer().feed((float*)&buf[0][0] + i * m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
     }
+
+    m_lastPtss[toType(streamType::audio)] = data.ptss;
 }
 
 void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
@@ -183,14 +200,14 @@ std::string FFMpegPlayer::getVertShader() {
 
 std::string FFMpegPlayer::getFragShaderHeader() {
     return STRINGIFY(
-        uniform sampler2D tex_unit; \n // Y component
-        uniform sampler2D u_tex_unit; \n // U component
-        uniform sampler2D v_tex_unit; \n // V component
-        uniform float alpha; \n // V component
-        \n
-        in vec2 tex_coord; \n
-        layout(location = 0) out vec4 fragColor; \n
-        void main() { \n);
+        uniform sampler2D tex_unit;                 \n // Y component
+        uniform sampler2D u_tex_unit;               \n // U component
+        uniform sampler2D v_tex_unit;               \n // V component
+        uniform float alpha;                        \n // V component
+                                                    \n
+        in vec2 tex_coord;                          \n
+        layout(location = 0) out vec4 fragColor;    \n
+        void main() {                               \n);
 }
 
 std::string FFMpegPlayer::getNv12FragShader() {
@@ -277,19 +294,17 @@ void FFMpegPlayer::shaderBegin() {
 
 void FFMpegPlayer::loadFrameToTexture(double time) {
     if (m_resourcesAllocated && m_run && !m_pause && m_frames.getFillAmt() > 0) {
-        auto actRelTime = time - m_startTime + static_cast<double>(m_videoStartPts) * m_timeBaseDiv;
+        m_actRelTime = getActRelTime(time);
 
         if (!m_glResInited && m_srcWidth && m_srcHeight) {
             allocGlRes(m_srcPixFmt);
             m_glResInited = true;
         }
 
-        if (calcFrameToUpload(actRelTime, time)
+        if (calcFrameToUpload(m_actRelTime, time)
             && m_consumeFrames
             && m_frames.getReadBuff().frame->width
             && m_frames.getReadBuff().frame->height) {
-
-            auto rp = m_frames.getReadPos();
 
             if (m_par.decodeYuv420OnGpu) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -310,13 +325,11 @@ void FFMpegPlayer::loadFrameToTexture(double time) {
             }
 
             // mark as consumed
-            auto actptss = m_frames.getReadBuff().ptss;
+            m_lastReadPtss = m_frames.getReadBuff().ptss;
             m_frames.getReadBuff().frame->pts = -1;
             m_frames.consumeCountUp();
             m_decodeCond.notify();     // wait until the packet was needed
             m_lastToGlTime = time;
-
-            //LOG << "upload " << rp << " ptss:" << actptss << " relTime:" << actRelTime << " diff: " << (actptss - actRelTime);
         }
     }
 }
@@ -330,7 +343,12 @@ bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time) {
             m_consumeFrames = true;
             return true;
         } else {
-            auto readPosTimeDiff = actRelTime - m_frames.getReadBuff().ptss;
+            if (m_lastReadPtss > m_frames.getReadBuff().ptss) {
+                m_startTime = time;
+                actRelTime = getActRelTime(time);
+            }
+
+            auto readPosTimeDiff = fmod(actRelTime, getDurationSec(streamType::video)) - m_frames.getReadBuff().ptss;
             if (readPosTimeDiff < 0) {
                 return false;
             } else {
@@ -353,7 +371,7 @@ bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time) {
             actRelTime = 0.0;
         }
 
-        auto uploadNewFrame = m_consumeFrames && m_frames.getFillAmt() > 1 && (time - m_lastToGlTime >= (0.8f / m_fps));
+        auto uploadNewFrame = m_consumeFrames && m_frames.getFillAmt() > 1 && (time - m_lastToGlTime >= (0.8f / m_fps[toType(streamType::video)]));
         if (uploadNewFrame) {
             actRelTime = time - m_startTime;
             ++m_frameToUpload %= m_videoFrameBufferSize;

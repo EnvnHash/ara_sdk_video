@@ -42,16 +42,18 @@ private:
     void uploadRgba();
     void clearResources() override;
 
-    std::string getVertShader();
-    std::string getFragShaderHeader();
-    std::string getNv12FragShader();
-    std::string getNv21FragShader();
-    std::string getYuv420FragShader();
+    double getActRelTime(double time) { return time - m_startTime + static_cast<double>(m_videoStartPts) * m_timeBaseDiv[toType(ffmpeg::streamType::video)]; }
+
+    static std::string getVertShader();
+    static std::string getFragShaderHeader();
+    static std::string getNv12FragShader();
+    static std::string getNv21FragShader();
+    static std::string getYuv420FragShader();
 
     std::vector<Texture>& getTextures() { return m_textures; }
 
     Portaudio               m_paudio;
-    uint32_t                m_cycBufSize = 128; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
+    uint32_t                m_cycBufSize = 160; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
     size_t                  m_bufSizeFact{};
     ShaderCollector*		m_shCol=nullptr;
     Shaders*				m_shader=nullptr;
@@ -60,7 +62,10 @@ private:
     bool					m_usePbos=false; // review memory leaks if using m_pbos....
     bool					m_glResInited=false;
     unsigned int 			m_pboIndex = 0;
+    double					m_actRelTime = 0.0;
     double					m_lastToGlTime = 0.0;
+    double					m_lastReadPtss = -1.0;
+    std::vector<float>      m_silenceAudioBuf;
 };
 
 }

@@ -28,7 +28,6 @@ endif()
 if(ANDROID)
     include_directories(${ARA_AV_SOURCE_DIR}/third_party/NDI/Android/Include)
 else()
-    message(STATUS ${ARA_AV_SOURCE_DIR}/third_party/NDI/include)
     include_directories(${ARA_AV_SOURCE_DIR}/third_party/NDI/include)
 endif()
 

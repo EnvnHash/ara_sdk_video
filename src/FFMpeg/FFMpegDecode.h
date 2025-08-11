@@ -31,7 +31,7 @@ public:
     //int 						        receiveFrameLoop();
 
     void 						        seekFrame(int64_t frame_number, double time);
-    inline void 						seek(double sec, double time) { seekFrame((int64_t) (sec * getFps() + 0.5), time); }
+    inline void 						seek(double sec, double time) { seekFrame((int64_t) (sec * getFps(ffmpeg::streamType::video) + 0.5), time); }
     inline void						    resetToStart(double time) { seek(0.0, time); }
 
     [[nodiscard]] inline bool			isRunning() const { return m_run; }
@@ -51,21 +51,21 @@ public:
     virtual void                        clearResources();
     bool                                decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
 
-    double  					        getDurationSec();
-    double 						        getFps();
-    int64_t 					        getTotalFrames();
+    double  					        getDurationSec(ffmpeg::streamType);
+    double 						        getFps(ffmpeg::streamType);
+    int64_t 					        getTotalFrames(ffmpeg::streamType);
     [[nodiscard]] enum AVPixelFormat    getSrcPixFmt() const { return m_srcPixFmt; }
     [[nodiscard]] int                   getNrBufferedFrames() { return m_frames.getFillAmt(); }
     int                                 getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
     int                                 getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
     int                                 getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
     int                                 getReadFramePtr() { return m_frames.getReadPos(); }
-    int                                 getFrameRateD() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.den; }
-    int                                 getFrameRateN() { return m_formatContext->streams[m_videoStreamIndex]->r_frame_rate.num; }
+    int                                 getFrameRateD() { return m_formatContext->streams[toType(ffmpeg::streamType::video)]->r_frame_rate.den; }
+    int                                 getFrameRateN() { return m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]]->r_frame_rate.num; }
     [[nodiscard]] inline uint32_t		getBitCount() const { return m_bitCount;  }
 
 protected:
-    void            initFFMpeg();
+    static void     initFFMpeg();
     void            setupHwDecoding();
     int				initHwDecode(AVCodecContext* ctx, const enum AVHWDeviceType type);
     virtual void    setDefaultHwDevice();
@@ -73,6 +73,7 @@ protected:
     void            checkHwDeviceType();
     void            checkForNetworkSrc(const ffmpeg::DecodePar& p);
     bool            setupStreams(const AVInputFormat*, AVDictionary**, ffmpeg::DecodePar& p);
+    void            setStreamTiming(int32_t i, ffmpeg::streamType t);
     void            initStreamInfo();
     void            parseSeeking();
     virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
@@ -87,7 +88,7 @@ protected:
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
     int32_t         parseReceivedFrame(AVCodecContext* codecContext);
-    void            incrementCounters();
+    void            incrementWritePos();
     virtual void    transferFromHwToCpu();
     int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
     int 			decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
@@ -143,9 +144,7 @@ protected:
     bool						        m_gotFirstAudioFrame =false;
 
     int							        m_logLevel=AV_LOG_INFO;
-    int 						        m_videoStreamIndex=0;
     int                                 m_videoNrTracks=0;
-    int 						        m_audioStreamIndex=0;
     int 						        m_audioNumChannels=0;
     int 						        m_dstSampleRate=0;
     int 						        m_dstNumSamples=0;
@@ -154,9 +153,11 @@ protected:
     int                                 m_scanAllPmtsSet = 0;
     int                                 m_seekByBytes = -1;
     int                                 m_genpts=0;
-    int                                 m_fps = 0;
     int 						        m_srcWidth=0;
     int 						        m_srcHeight=0;
+
+    std::array<int32_t, 2>              m_fps{};
+    std::array<int32_t, 2>		        m_streamIndex{};
 
     enum AVPixelFormat			        m_srcPixFmt{};
     enum AVPixelFormat			        m_destPixFmt = AV_PIX_FMT_BGRA;
@@ -175,10 +176,12 @@ protected:
 
     double 						        m_startTime=0.0;
     double 						        m_epsZero=0.000025;
-    double						        m_timeBaseDiv=0.0;
-    double						        m_frameDur=0.0;
+    double					            m_audioToVideoDurationDiff = 0.0;
 
-    double						        m_lastPtss=-1.0;
+    std::array<double, 2>		        m_timeBaseDiv{};
+    std::array<double, 2>		        m_frameDur{};
+    std::array<double, 2>		        m_streamDuration{}; // should be the same
+    std::array<double, 2>		        m_lastPtss{-1.0, -1.0};
     int 				                m_frameToUpload=-1;
 
     unsigned int				        m_totNumFrames=0;

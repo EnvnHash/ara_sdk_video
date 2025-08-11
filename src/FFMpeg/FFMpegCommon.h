@@ -72,6 +72,8 @@ namespace ara {
 
 namespace ara::av::ffmpeg {
 
+enum class streamType : int32_t { video=0, audio };
+
 struct TimedFrame {
     AVFrame* frame=nullptr;
     double ptss=0;
