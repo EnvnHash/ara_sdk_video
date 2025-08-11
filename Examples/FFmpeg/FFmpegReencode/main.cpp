@@ -13,17 +13,30 @@ using namespace std;
 using namespace ara;
 using namespace ara::av;
 
-FFMpegDecode        player;
-StopWatch           watch;
+FFMpegDecode        decoder;
+StopWatch           fpsWatch;
+StopWatch           decodeWatch;
 
 int main(int argc, char** argv) {
-    player.openFile({ .filePath = "trailer_1080p.mov", .startDecodeThread = true });
+    bool run = true;
+    decodeWatch.setStart();
 
-    while (true) {
-        watch.setStart();
-        watch.setEnd();
-        watch.print("decode time: ");
+    decoder.openFile({ .filePath = "trailer_1080p.mov", .startDecodeThread = true });
+    decoder.setEndCbFunc([&]{
+       run = false;
+    });
+
+    while (run) {
+        fpsWatch.setStart();
+        fpsWatch.setEnd();
+        fpsWatch.print("decode time: ");
+
+        auto b = decoder.reqNextBuf();
+        if (b) {
+            //LOG << "got buf";
+        }
     }
 
-    LOG << "bombich";
+    decodeWatch.setEnd();
+    LOG << "bombich! decode took: " << decodeWatch.getDt() << " ms";
 }

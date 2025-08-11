@@ -16,7 +16,7 @@ using namespace std;
 
 namespace ara::av {
 
-void FFMpegDecode::openFile(const ffmpeg::DecodePar& p) {
+void FFMpegDecode::openFile(const DecodePar& p) {
     m_par = p;
     initFFMpeg();
     try {
@@ -37,11 +37,11 @@ void FFMpegDecode::openFile(const ffmpeg::DecodePar& p) {
             m_decodeThread.detach();
         }
     } catch (std::runtime_error& e) {
-        LOGE << "FFmpeg::openFile Error: " << e.what();
+        LOGE << "openFile Error: " << e.what();
     }
 }
 
-void FFMpegDecode::openCamera(const ffmpeg::DecodePar& p) {
+void FFMpegDecode::openCamera(const DecodePar& p) {
     m_par = p;
 #ifdef _WIN32
     m_par.filePath = "video="+m_par.filePath;
@@ -69,7 +69,7 @@ void FFMpegDecode::openCamera(const ffmpeg::DecodePar& p) {
 
         setupStreams(camInputFormat, &m_formatOpts, m_par);
     } catch (std::runtime_error& e) {
-        LOGE << "FFmpeg::openFile Error: " << e.what();
+        LOGE << "openFile Error: " << e.what();
     }
 }
 
@@ -77,7 +77,7 @@ void FFMpegDecode::initFFMpeg() {
     avdevice_register_all();
     avformat_network_init();
     av_log_set_level(AV_LOG_VERBOSE);
-    av_log_set_callback(&ffmpeg::LogCallbackShim);    // custom logging
+    av_log_set_callback(&LogCallbackShim);    // custom logging
 }
 
 void FFMpegDecode::singleThreadDecodeLoop() {
@@ -89,11 +89,11 @@ void FFMpegDecode::singleThreadDecodeLoop() {
             }
 
             // if it's the video stream and the m_buffer queue is not filled
-            if (m_packet->stream_index == m_streamIndex[toType(ffmpeg::streamType::video)]) {
+            if (m_packet->stream_index == m_streamIndex[toType(streamType::video)]) {
                 // we are using multiple frames, so the frames reaching here are not in a continuous order!!!!!!
                 m_actFrameNr = static_cast<uint32_t>(static_cast<double>(m_packet->pts) * m_timeBaseDiv[toType(streamType::video)] / m_frameDur[toType(streamType::video)]);
-                if ((m_totNumFrames - 1) == m_actFrameNr && m_loop && !m_isStream) {
-                    av_seek_frame(m_formatContext, m_streamIndex[toType(ffmpeg::streamType::video)], 0, AVSEEK_FLAG_BACKWARD);
+                if ((m_totNumFrames - 1) == m_actFrameNr && m_par.loop && !m_isStream) {
+                    av_seek_frame(m_formatContext, m_streamIndex[toType(streamType::video)], 0, AVSEEK_FLAG_BACKWARD);
                 }
 
                 if (decodeVideoPacket(m_packet, m_videoCodecCtx) < 0) {
@@ -147,7 +147,7 @@ void FFMpegDecode::allocFormatContext() {
     av_dict_parse_string(&m_formatOpts, "", ":", ",", 0);
 }
 
-void FFMpegDecode::checkForNetworkSrc(const ffmpeg::DecodePar& p) {
+void FFMpegDecode::checkForNetworkSrc(const DecodePar& p) {
     if (p.filePath.substr(0, 6) == "mms://" || p.filePath.substr(0, 7) == "mmsh://" ||
         p.filePath.substr(0, 7) == "mmst://" || p.filePath.substr(0, 7) == "mmsu://" ||
         p.filePath.substr(0, 7) == "http://" || p.filePath.substr(0, 8) == "https://" ||
@@ -183,7 +183,7 @@ void FFMpegDecode::setDefaultHwDevice() {
 #endif
 }
 
-bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, ffmpeg::DecodePar& p) {
+bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, DecodePar& p) {
     int err=0;
     if ((err = avformat_open_input(&m_formatContext, !p.filePath.empty() ? p.filePath.c_str() : nullptr, format, options)) != 0) {
         throw runtime_error("ERROR could not open the file "+p.filePath+" "+err2str(err));
@@ -286,15 +286,15 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
     m_videoCodecCtx->codec_id = video_codec->id;
 
     if (m_par.useHwAccel) {
-        m_videoCodecCtx->get_format = ffmpeg::getHwFormat;
+        m_videoCodecCtx->get_format = getHwFormat;
         av_opt_set_int(m_videoCodecCtx, "refcounted_frames", 1, 0);    // what does this do?
 
-        ffmpeg::hwFormatToCheck = m_hwPixFmt;
+        hwFormatToCheck = m_hwPixFmt;
         if (initHwDecode(m_videoCodecCtx, m_hwDeviceType) < 0) {
             throw runtime_error("initHwDecode failed");
         }
 
-        m_hwPixFmt = ffmpeg::hwFormatToCheck;
+        m_hwPixFmt = hwFormatToCheck;
     }
 
     // save basic codec parameters for access from outside
@@ -390,7 +390,7 @@ void FFMpegDecode::parseSeeking() {
     }
 }
 
-void FFMpegDecode::allocateResources(ffmpeg::DecodePar& p) {
+void FFMpegDecode::allocateResources(DecodePar& p) {
     m_packet = av_packet_alloc();
     if (!m_packet) {
         throw runtime_error("failed to allocated memory for AVPacket");
@@ -708,31 +708,32 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
     return 0;
 }
 
-/*uint8_t* FFMpegDecode::reqNextBuf() {
+uint8_t* FFMpegDecode::reqNextBuf() {
     uint8_t* buf=nullptr;
+    bool gotValidData = m_resourcesAllocated && m_run;
+    if (m_par.decodeYuv420OnGpu) {
+        gotValidData = gotValidData && m_frames.getFillAmt() > 0
+                       && m_frames.getReadBuff().frame->width
+                       && m_frames.getReadBuff().frame->height;
+    } else {
+        gotValidData = gotValidData && m_bgraFrame.getFillAmt() > 0
+                       && m_bgraFrame.getReadBuff().frame->width
+                       && m_bgraFrame.getReadBuff().frame->height;
+    }
 
-    if (m_resourcesAllocated && m_run && m_frames.getFillAmt() > 0) {
-        ++m_frameToUpload %= m_videoFrameBufferSize;
-
-        if (m_frameToUpload > -1
-            && m_bgraFrame.getReadBuff().frame->width
-            && m_bgraFrame.getReadBuff().frame->height
-            && m_bgraFrame.getReadBuff().frame->data[0]) {
+    if (gotValidData) {
+        if (m_par.decodeYuv420OnGpu) {
+            buf = m_frames.getReadBuff().frame->data[0];
+            m_frames.consumeCountUp();
+        } else {
             buf = m_bgraFrame.getReadBuff().frame->data[0];
-
-            // mark as consumed
-            m_frames.getReadBuff().frame->pts = -1;
-
-            if (m_nrBufferedFrames > 0) {
-                --m_nrBufferedFrames;
-            }
-
-            m_decodeCond.notify();     // wait until the packet was needed
+            m_bgraFrame.consumeCountUp();
         }
+        m_decodeCond.notify();     // wait until the packet was needed
     }
 
     return buf;
-}*/
+}
 
 void FFMpegDecode::seekFrame(int64_t frame_number, double time) {
      // Seek to the keyframe at timestamp.

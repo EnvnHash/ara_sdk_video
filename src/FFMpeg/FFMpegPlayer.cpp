@@ -101,10 +101,10 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
         std::this_thread::sleep_for(1ms);
     }
 
-    // in case there is a negative difference between the audio and video stream duration,
+    // in case there is a positive difference between the audio and video stream duration,
     // and we just came across the loop point, and the difference in duration as silence into the cycle buffer
-    if (m_audioToVideoDurationDiff > 0
-        && m_firstFramePresented && m_lastPtss[toType(streamType::audio)] > data.ptss) {
+    if (m_audioToVideoDurationDiff > 0 && m_firstFramePresented
+        && m_lastPtss[toType(streamType::audio)] > data.ptss) {
         auto addNumSilenceFrames = static_cast<int32_t>((m_audioToVideoDurationDiff * m_paudio.getSampleRate()) / m_paudio.getFramesPerBuffer());
         for (size_t i=0; i<addNumSilenceFrames; i++) {
             m_paudio.getCycleBuffer().feed(m_silenceAudioBuf.data());
