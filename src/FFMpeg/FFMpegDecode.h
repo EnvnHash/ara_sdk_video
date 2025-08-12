@@ -50,14 +50,14 @@ public:
     void setVideoFrameBufferSize(int size) { m_videoFrameBufferSize = size; }
 
     virtual void        clearResources();
-    bool                decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
+    bool                decodeYuv420OnGpu() const { return m_par.decodeYuv420OnGpu; }
     double  			getDurationSec(ffmpeg::streamType);
     double 				getFps(ffmpeg::streamType);
     int64_t 			getTotalFrames(ffmpeg::streamType);
     [[nodiscard]] auto  getSrcPixFmt() const { return m_srcPixFmt; }
     [[nodiscard]] auto  getNrBufferedFrames() { return m_frames.getFillAmt(); }
     auto                getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
-    auto                getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
+    auto                getVideoFrameBufferSize() const { return m_videoFrameBufferSize; }
     auto                getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
     auto                getReadFramePtr() { return m_frames.getReadPos(); }
     auto                getFrameRateD() { return m_formatContext->streams[toType(ffmpeg::streamType::video)]->r_frame_rate.den; }
@@ -65,6 +65,7 @@ public:
     [[nodiscard]] auto	getBitCount() const { return m_bitCount; }
     [[nodiscard]] auto&	getDecodeCond() { return m_decodeCond; }
     [[nodiscard]] auto&	getPar() const { return m_par; }
+    auto&               getEndThreadCond() { return m_endThreadCond; }
 
 protected:
     void            setupHwDecoding();

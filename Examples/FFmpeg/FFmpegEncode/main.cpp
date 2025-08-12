@@ -76,8 +76,6 @@ void init() {
 
     testPic = shCol.add("test_pic", vert, frag);
 
-    int bitRate = 1048576 *3; // 1 MBit = 1.048.576. ab 4 Mbit probleme bei rtmp streams auf windows
-    encoder.setVideoBitRate(bitRate);
     //bool ret = encoder.init("rtmp://192.168.1.103/live/video_test", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
     //bool ret = encoder.init("rtmp://unstumm.com/live/realsense", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
     bool ret = encoder.init({
@@ -86,6 +84,7 @@ void init() {
                             .width = winWidth,
                             .height = winHeight,
                             .fps = 30,
+                            .videoBitRate = 1048576 *3, // 1 MBit = 1.048.576. ab 4 Mbit probleme bei rtmp streams auf windows
                             .useHwAccel = true
                             });
     if (ret) {

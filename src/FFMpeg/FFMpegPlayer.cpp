@@ -97,8 +97,7 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
         return;
     }
 
-    while (m_paudio.getCycleBuffer().getFreeSpace() < m_bufSizeFact) {
-        LOGE << "overflow!!!";
+    while (m_paudio.getCycleBuffer().isFilled()) {
         std::this_thread::sleep_for(1ms);
     }
 
@@ -293,7 +292,7 @@ void FFMpegPlayer::shaderBegin() {
     }
 }
 
-void FFMpegPlayer::loadFrameToTexture(double time) {
+void FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
     if (m_resourcesAllocated && m_run && !m_pause && m_frames.getFillAmt() > 0) {
         m_actRelTime = getActRelTime(time);
 
@@ -302,16 +301,16 @@ void FFMpegPlayer::loadFrameToTexture(double time) {
             m_glResInited = true;
         }
 
-        if (calcFrameToUpload(m_actRelTime, time)
+        if (calcFrameToUpload(m_actRelTime, time, monotonic)
             && m_consumeFrames
             && m_frames.getReadBuff().frame->width
             && m_frames.getReadBuff().frame->height) {
 
             if (m_par.decodeYuv420OnGpu) {
                 glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) && !m_frames.empty()) {
+                if ((AV_PIX_FMT_NV12 == m_srcPixFmt || AV_PIX_FMT_NV21 == m_srcPixFmt) ) {
                     uploadNvFormat();
-                } else if ((AV_PIX_FMT_YUV420P == m_srcPixFmt || AV_PIX_FMT_YUYV422 == m_srcPixFmt) && !m_frames.empty() && !m_textures.empty()) {
+                } else if ((AV_PIX_FMT_YUV420P == m_srcPixFmt || AV_PIX_FMT_YUYV422 == m_srcPixFmt) && !m_textures.empty()) {
                     uploadYuv420();
                 }
             } else {
@@ -335,8 +334,12 @@ void FFMpegPlayer::loadFrameToTexture(double time) {
     }
 }
 
-bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time) {
-    if (!m_hasNoTimeStamp) {
+bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time, bool monotonic) {
+    if (monotonic) {
+        m_consumeFrames = true;
+        m_firstFramePresented = true;
+        return true;
+    } else if (!m_hasNoTimeStamp) {
         // time stabilization, try to take the next frame in queue, but advance if there is a frame closer to the actual time
         if (!m_firstFramePresented) {
             m_firstFramePresented = true;

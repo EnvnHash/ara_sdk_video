@@ -39,26 +39,29 @@ void init() {
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{1.f, 0.f, 0.f, 1.f}, .flipHori = true });
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 }
 
 static void display() {
     fpsWatch.setStart();
     fpsWatch.setEnd();
-    fpsWatch.print("decode time: ");
+    //fpsWatch.print("decode time: ");
 
-    auto b = decoder.reqNextBuf();
-    if (b) {
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-        decoder.loadFrameToTexture(glfwGetTime());
-        decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
-        quad->draw();
-        glfwSwapBuffers(window);
+    decoder.loadFrameToTexture(0.0, true);
+    decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
+    quad->draw();
+    glfwSwapBuffers(window);
 
-        // download to encode
-        encoder.downloadGlFbToVideoFrame(static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)));
+    encoder.downloadGlFbToVideoFrame(static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)), nullptr, true);
+
+    if (decoder.getPaudio().isRunning()){
+        // fake audio consume
+        while (decoder.getPaudio().getCycleBuffer().getFillAmt() > 0) {
+            decoder.getPaudio().getCycleBuffer().consumeCountUp();
+        }
     }
 }
 
@@ -110,20 +113,23 @@ int main(int, char**) {
     decoder.openFile({
         .glbase = &glbase,
         .filePath = "trailer_1080p.mov",
-        .startDecodeThread = true,
+        .destWidth = 1920,
+        .destHeight = 1080,
+        .loop = false,
         .endCb = [&] { run = false; }
     });
+    decoder.start(glfwGetTime());
 
     glfwSetWindowSize(window, decoder.getPar().destWidth, decoder.getPar().destHeight);
     glViewport(0, 0, decoder.getPar().destWidth, decoder.getPar().destHeight);
 
     encoder.init({
         .filePath = "trailer_1080p_transc.mov",
-        .pixelFormat = AV_PIX_FMT_YUV420P,
+        .pixelFormat = AV_PIX_FMT_BGRA,
         .width = decoder.getPar().destWidth,
         .height = decoder.getPar().destHeight,
         .fps = static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)),
-        .bitRate = 1048576 *4,
+        .videoBitRate = 1048576 *7,
         .useHwAccel = true
     });
     encoder.record();

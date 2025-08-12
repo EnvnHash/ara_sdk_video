@@ -113,7 +113,8 @@ struct EncodePar {
     int32_t         width = 0;
     int32_t         height = 0;
     int32_t         fps{25};
-    int32_t         bitRate{4194304};
+    int32_t         videoBitRate{4194304};
+    int32_t         audioBitRate{128000};
     bool            useHwAccel = true;
 };
 
@@ -251,6 +252,12 @@ static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, int width, int height, 
     if (buf) {
         buf->resize(av_image_get_buffer_size(pix_fmt, width, height, 1));
         av_image_fill_arrays(picture->data, picture->linesize, buf->data(), pix_fmt, width, height, 1);
+    } else {
+        auto ret = av_frame_get_buffer(picture, 32);
+        if (ret < 0) {
+            LOGE << "FFMpegEncode::allocPicture ERROR: Could not allocate frame data.";
+            return nullptr;
+        }
     }
 
     return picture;

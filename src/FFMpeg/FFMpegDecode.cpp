@@ -85,8 +85,14 @@ void FFMpegDecode::singleThreadDecodeLoop() {
             if (m_packet->stream_index == m_streamIndex[toType(streamType::video)]) {
                 // we are using multiple frames, so the frames reaching here are not in a continuous order!!!!!!
                 m_actFrameNr = static_cast<uint32_t>(static_cast<double>(m_packet->pts) * m_timeBaseDiv[toType(streamType::video)] / m_frameDur[toType(streamType::video)]);
-                if ((m_totNumFrames - 1) == m_actFrameNr && m_par.loop && !m_isStream) {
-                    av_seek_frame(m_formatContext, m_streamIndex[toType(streamType::video)], 0, AVSEEK_FLAG_BACKWARD);
+                if ((m_totNumFrames - 1) == m_actFrameNr && !m_isStream) {
+                    if (m_par.endCb) {
+                        m_par.endCb();
+                    }
+
+                    if (m_par.loop) {
+                        av_seek_frame(m_formatContext, m_streamIndex[toType(streamType::video)], 0, AVSEEK_FLAG_BACKWARD);
+                    }
                 }
 
                 if (decodeVideoPacket(m_packet, m_videoCodecCtx) < 0) {
@@ -543,13 +549,6 @@ void FFMpegDecode::incrementWritePos() {
     // the stream might start with a pts different from 0, for this reason here register explicitly the starting pts
     if (m_frames.getFillAmt() == 0) {
         m_videoStartPts = m_par.useHwAccel ? m_frame->pts : m_frames.getWriteBuff().frame->pts;
-    }
-
-    // call end callback if we are done
-    if (m_par.endCb
-        && m_frames.getWriteBuff().ptss < m_lastPtss[toType(streamType::video)]
-        && m_lastPtss[toType(streamType::video)] > 0) {
-        m_par.endCb();
     }
 
     m_lastPtss[toType(streamType::video)] = m_frames.getWriteBuff().ptss;

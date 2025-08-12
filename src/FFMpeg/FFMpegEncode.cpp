@@ -199,7 +199,6 @@ bool FFMpegEncode::record() {
         LOG << " using codec: " << m_codec[toType(streamType::video)]->name;
 
         m_have[toType(streamType::video)] = 1;
-        m_encode_video = 1;
     } else {
         LOGE << "no video codec found";
     }
@@ -207,7 +206,6 @@ bool FFMpegEncode::record() {
     if (!m_noAudio && m_fmt->audio_codec != AV_CODEC_ID_NONE) {
         addStream(&m_outStream[toType(streamType::audio)], m_oc, &m_codec[toType(streamType::audio)], m_fmt->audio_codec);
         m_have[toType(streamType::audio)] = 1;
-        m_encode_audio = 1;
     } else if(!m_noAudio) {
         LOGE << "no audio codec found";
     }
@@ -235,9 +233,9 @@ bool FFMpegEncode::record() {
 
     // Write the stream header, if any. Note: This might change the streams time_base
     m_ret = avformat_write_header(m_oc, &avioOpts);
-    if (m_ret < 0) LOGE << "Error occurred when opening output file: " << ffmpeg::err2str(m_ret);
-
-    //ffmpeg::dumpDict(avioOpts, true); // error checking, dictionary must be empty
+    if (m_ret < 0) {
+        LOGE << "Error occurred when opening output file: " << ffmpeg::err2str(m_ret);
+    }
 
 #ifdef WITH_AUDIO
 
@@ -287,7 +285,7 @@ void FFMpegEncode::recThread() {
     while (m_doRec) {
         if (m_noAudio) {
             if (m_videoFrames.getFillAmt() > 0) {
-                m_encode_video = writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
+                writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
             } else {
                 this_thread::sleep_for(200us);
             }
@@ -295,9 +293,9 @@ void FFMpegEncode::recThread() {
             // select the stream to encode if video is before audio, write video, otherwise audio
             if (av_compare_ts(m_outStream[toType(streamType::video)].next_pts, m_outStream[toType(streamType::video)].enc->time_base,
                               m_outStream[toType(streamType::audio)].next_pts, m_outStream[toType(streamType::audio)].enc->time_base) <= 0) {
-                m_encode_video = writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
+                writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
             } else {
-                m_encode_audio = writeAudioFrame(m_oc, &m_outStream[toType(streamType::audio)], false);
+                writeAudioFrame(m_oc, &m_outStream[toType(streamType::audio)], false);
             }
         }
     }
@@ -400,7 +398,6 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc, const AVCod
             LOGE << "Could not allocate stream";
             return;
         }
-
         ost->st->id = oc->nb_streams -1;
     }
 
@@ -439,177 +436,8 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc, const AVCod
             av_opt_set(c->priv_data, "preset", "fastest", 0);
 #endif
         break;
-
-    case AVMEDIA_TYPE_VIDEO: {
-        c->codec_id = codec_id;
-        c->bit_rate = m_videoBitRate;
-
-        // Resolution must be a multiple of two.
-        c->width = m_par.width;
-        c->height = m_par.height;
-
-        c->framerate = AVRational{m_par.fps, 1};
-        c->gop_size = 1; // emit one intra frame every twelve frames at most
-        c->pix_fmt = m_par.useHwAccel ? m_hwPixFmt : AV_PIX_FMT_YUV420P;
-        c->thread_count = m_par.useHwAccel ? 1 : 4;
-
-        if (m_par.useHwAccel) {
-            if ((m_ret = setHwframeCtx(c, m_hw_device_ctx)) < 0) {
-                LOGE << "Failed to set hwframe context.";
-                return;
-            }
-        }
-
-        if (c->codec_id == AV_CODEC_ID_H264 || c->codec_id == AV_CODEC_ID_MPEG2TS) {
-            //film, animation, grain, stillimage, psnr, ssim, fastdecode, zerolatency
-            if (m_is_net_stream) {
-                //av_opt_set(c->priv_data, "preset", "superfast", 0);
-                av_opt_set(c->priv_data, "vbr", "1", AV_OPT_SEARCH_CHILDREN);
-            } else {
-                //av_opt_set(c->priv_data, "tune", "animation", 0);
-                // ultrafast,superfast, veryfast, faster, fast, medium, slow, slower, veryslow
-                // je schneller, desto groesser die dateien
-                //av_opt_set(c->priv_data, "preset", "faster", 0);
-            }
-
-            // for compatibility
-            c->profile = FF_PROFILE_H264_BASELINE;
-            c->me_cmp = FF_CMP_CHROMA;
-            //	c->me_method = ME_EPZS;
-        }
-
-        if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-            // just for testing, we also add B-frames
-            c->max_b_frames = 2;
-        }
-
-        if (c->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
-            // Needed to avoid using macroblocks in which some coeffs overflow.
-            // This does not happen with normal video, it just happens here as
-            // the motion of the chroma plane does not match the luma plane.
-            c->mb_decision = 2;
-        }
-
-        //if (m_isRtmp)
-        //{
-            bool twopass = false;
-            const char *preset = "superfast"; // "mq";
-            const char *profile = "high";
-            const char *rc = m_isRtmp ? "VBR" : "CBR";
-            int cqp = 20;
-
-            av_opt_set_int(c->priv_data, "cbr", false, 0);
-            av_opt_set(c->priv_data, "profile", profile, 0);
-            //av_opt_set(c->priv_data, "preset", preset, 0);
-
-            if (strcmp(rc, "cqp") == 0) {
-                m_videoBitRate = 0;
-                c->global_quality = cqp;
-
-            } else if (strcmp(rc, "lossless") == 0) {
-                m_videoBitRate = 0;
-                cqp = 0;
-
-                bool hp = (strcmp(preset, "hp") == 0 || strcmp(preset, "llhp") == 0);
-                av_opt_set(c->priv_data, "preset", hp ? "losslesshp" : "lossless", 0);
-
-            } else if (strcmp(rc, "vbr") != 0) { // CBR by default
-                av_opt_set_int(c->priv_data, "cbr", false, 0);
-                av_opt_set_int(c->priv_data, "vbr", true, 0);
-                const int64_t rate = m_videoBitRate;
-                c->rc_max_rate = rate;
-                c->rc_min_rate = rate;
-                cqp = 0;
-            }
-
-            //av_opt_set(c->priv_data, "level", "auto", 0);
-            av_opt_set_int(c->priv_data, "2pass", twopass, 0);
-            //av_opt_set_int(c->priv_data, "gpu", gpu, 0);
-            //set_psycho_aq(enc, psycho_aq);
-
-            const int rate = m_videoBitRate;
-            c->bit_rate = rate;
-            c->rc_buffer_size = rate;
-            //c->max_b_frames = 2;
-            c->gop_size = m_isRtmp ? 25 : 300; // obs setting gop -> group of pictures
-            // c->gop_size = 250; // obs setting gop -> group of pictures
-            c->time_base = AVRational { 1, m_par.fps };
-
-            /*
-            switch (info.colorspace) {
-                case VIDEO_CS_601:
-                    c->color_trc = AVCOL_TRC_SMPTE170M;
-                    c->color_primaries = AVCOL_PRI_SMPTE170M;
-                    c->colorspace = AVCOL_SPC_SMPTE170M;
-                    break;
-                case VIDEO_CS_DEFAULT:
-                case VIDEO_CS_709:
-                    c->color_trc = AVCOL_TRC_BT709;
-                    c->color_primaries = AVCOL_PRI_BT709;
-                    c->colorspace = AVCOL_SPC_BT709;
-                    break;
-                case VIDEO_CS_SRGB:
-                    c->color_trc = AVCOL_TRC_IEC61966_2_1;
-                    c->color_primaries = AVCOL_PRI_BT709;
-                    c->colorspace = AVCOL_SPC_BT709;
-                    break;
-            }*/
-
-            printf("settings:\n"
-                   "\trate_control: %s\n"
-                   "\tbitrate:      %d\n"
-                   "\tcqp:          %d\n"
-                   "\tkeyint:       %d\n"
-                   "\tpreset:       %s\n"
-                   "\tprofile:      %s\n"
-                   "\twidth:        %d\n"
-                   "\theight:       %d\n"
-                   "\t2-pass:       %s\n"
-                   "\tb-frames:     %d\n",
-                    //"\tpsycho-aq:    %d\n"
-                    //"\tGPU:          %d\n",
-                   rc, m_videoBitRate, cqp, c->gop_size, preset, profile,
-                   c->width, c->height,
-                   twopass ? "true" : "false", c->max_b_frames
-                    //psycho_aq,
-                    //gpu
-            );
-
-            if (m_ret < 0)
-                LOGE << "Error could not set rtmp option";
-
-            // timebase: This is the fundamental unit of time (in seconds) in terms
-            // of which frame timestamps are represented. For fixed-fps content,
-            // timebase should be 1/framerate and timestamp increments should be
-            // identical to 1.
-
-            // tbr
-            ost->st->avg_frame_rate = AVRational{m_par.fps, 1}; // needed e.g. for rtmp streams
-            ost->st->r_frame_rate = AVRational{m_par.fps, 1}; // tbr,  needed e.g. for rtmp streams
-            //ost->st->r_frame_rate = AVRational{1, 1000}; // needed e.g. for rtmp streams
-
-            if (m_isRtmp)
-            {
-                ost->st->time_base = AVRational{ 1, 1000 }; // tbn
-            } else {
-                ost->st->time_base = AVRational{ 1, 512 * m_par.fps }; // tbn : 10 -> 10240, 100 -> 12800, 1000 -> 16000, 10000 -> 10000
-                //ost->st->time_base = m_par.useHwAccel ? AVRational{1, m_par.fps} : AVRational{1, 1000};
-            }
-
-            if (m_isRtmp)
-            {
-                ost->st->codecpar->extradata = c->extradata;
-                ost->st->codecpar->extradata_size = c->extradata_size;
-                if (m_ret < 0)
-                    LOGE << "Error could not set rtmp option";
-            }
-
-            if (ost->st) {
-                //m_timeBaseMult = (double) ost->st->time_base.den / (double) ost->st->time_base.num * 0.001; // for converting elapsed encoding time in ms to pts
-            }
-
-        //}
-    }
+    case AVMEDIA_TYPE_VIDEO:
+        setVideoCodePar(ost, c, codec_id);
         break;
     default:
         break;
@@ -618,6 +446,143 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc, const AVCod
     // Some formats want stream headers to be separate.
     if (oc && (oc->oformat->flags & AVFMT_GLOBALHEADER)) {
         c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
+    }
+}
+
+void FFMpegEncode::setVideoCodePar(OutputStream *ost, AVCodecContext *c, enum AVCodecID codec_id) {
+    c->codec_id = codec_id;
+    c->bit_rate = m_par.videoBitRate;
+
+    // Resolution must be a multiple of two.
+    c->width = m_par.width;
+    c->height = m_par.height;
+
+    c->framerate = AVRational{m_par.fps, 1};
+    c->gop_size = 1; // emit one intra frame every twelve frames at most
+    c->pix_fmt = m_par.useHwAccel ? m_hwPixFmt : AV_PIX_FMT_YUV420P;
+    c->thread_count = m_par.useHwAccel ? 1 : 4;
+
+    if (m_par.useHwAccel) {
+        if ((m_ret = setHwframeCtx(c, m_hw_device_ctx)) < 0) {
+            LOGE << "Failed to set hwframe context.";
+            return;
+        }
+    }
+
+    if (c->codec_id == AV_CODEC_ID_H264 || c->codec_id == AV_CODEC_ID_MPEG2TS) {
+        // film, animation, grain, stillimage, psnr, ssim, fastdecode, zerolatency
+        if (m_is_net_stream) {
+            //av_opt_set(c->priv_data, "preset", "superfast", 0);
+            av_opt_set(c->priv_data, "vbr", "1", AV_OPT_SEARCH_CHILDREN);
+        } else {
+            //av_opt_set(c->priv_data, "tune", "animation", 0);
+            // ultrafast,superfast, veryfast, faster, fast, medium, slow, slower, veryslow
+            // je schneller, desto groesser die dateien
+            //av_opt_set(c->priv_data, "preset", "faster", 0);
+        }
+
+        // for compatibility
+        c->profile = FF_PROFILE_H264_BASELINE;
+        c->me_cmp = FF_CMP_CHROMA;
+        //	c->me_method = ME_EPZS;
+    }
+
+    if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+        // just for testing, we also add B-frames
+        c->max_b_frames = 2;
+    }
+
+    if (c->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
+        // Needed to avoid using macroblocks in which some coeffs overflow.
+        // This does not happen with normal video, it just happens here as
+        // the motion of the chroma plane does not match the luma plane.
+        c->mb_decision = 2;
+    }
+
+    bool twopass = false;
+    const char *preset = "superfast"; // "mq";
+    const char *profile = "high";
+    const char *rc = m_isRtmp ? "VBR" : "CBR";
+    int cqp = 20;
+
+    av_opt_set_int(c->priv_data, "cbr", false, 0);
+    av_opt_set(c->priv_data, "profile", profile, 0);
+    //av_opt_set(c->priv_data, "preset", preset, 0);
+
+    if (strcmp(rc, "cqp") == 0) {
+        m_par.videoBitRate = 0;
+        c->global_quality = cqp;
+    } else if (strcmp(rc, "lossless") == 0) {
+        m_par.videoBitRate = 0;
+        cqp =  m_par.videoBitRate;
+        bool hp = (strcmp(preset, "hp") == 0 || strcmp(preset, "llhp") == 0);
+        av_opt_set(c->priv_data, "preset", hp ? "losslesshp" : "lossless", 0);
+    } else if (strcmp(rc, "vbr") != 0) { // CBR by default
+        av_opt_set_int(c->priv_data, "cbr", false, 0);
+        av_opt_set_int(c->priv_data, "vbr", true, 0);
+        c->rc_max_rate = m_par.videoBitRate;
+        c->rc_min_rate = m_par.videoBitRate;
+        cqp = 0;
+    }
+
+    //av_opt_set(c->priv_data, "level", "auto", 0);
+    av_opt_set_int(c->priv_data, "2pass", twopass, 0);
+    //av_opt_set_int(c->priv_data, "gpu", gpu, 0);
+    //set_psycho_aq(enc, psycho_aq);
+
+    c->bit_rate = m_par.videoBitRate;
+    c->rc_buffer_size = m_par.videoBitRate;
+    //c->max_b_frames = 2;
+    c->gop_size = m_isRtmp ? 25 : 300; // obs setting gop -> group of pictures
+    // c->gop_size = 250; // obs setting gop -> group of pictures
+    c->time_base = AVRational { 1, m_par.fps };
+
+    printf("settings:\n"
+           "\trate_control: %s\n"
+           "\tbitrate:      %d\n"
+           "\tcqp:          %d\n"
+           "\tkeyint:       %d\n"
+           "\tpreset:       %s\n"
+           "\tprofile:      %s\n"
+           "\twidth:        %d\n"
+           "\theight:       %d\n"
+           "\t2-pass:       %s\n"
+           "\tb-frames:     %d\n",
+            //"\tpsycho-aq:    %d\n"
+            //"\tGPU:          %d\n",
+           rc, m_par.videoBitRate, cqp, c->gop_size, preset, profile,
+           c->width, c->height,
+           twopass ? "true" : "false", c->max_b_frames
+            //psycho_aq,
+            //gpu
+    );
+
+    if (m_ret < 0)
+        LOGE << "Error could not set rtmp option";
+
+    // timebase: This is the fundamental unit of time (in seconds) in terms
+    // of which frame timestamps are represented. For fixed-fps content,
+    // timebase should be 1/framerate and timestamp increments should be
+    // identical to 1.
+
+    // tbr
+    ost->st->avg_frame_rate = AVRational{m_par.fps, 1}; // needed e.g. for rtmp streams
+    ost->st->r_frame_rate = AVRational{m_par.fps, 1}; // tbr,  needed e.g. for rtmp streams
+    //ost->st->r_frame_rate = AVRational{1, 1000}; // needed e.g. for rtmp streams
+
+    if (m_isRtmp) {
+        ost->st->time_base = AVRational{ 1, 1000 }; // tbn
+    } else {
+        ost->st->time_base = AVRational{ 1, 512 * m_par.fps }; // tbn : 10 -> 10240, 100 -> 12800, 1000 -> 16000, 10000 -> 10000
+        //ost->st->time_base = m_par.useHwAccel ? AVRational{1, m_par.fps} : AVRational{1, 1000};
+    }
+
+    if (m_isRtmp) {
+        ost->st->codecpar->extradata = c->extradata;
+        ost->st->codecpar->extradata_size = c->extradata_size;
+        if (m_ret < 0) {
+            LOGE << "Error could not set rtmp option";
+        }
     }
 }
 
@@ -880,35 +845,17 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
     if (m_useFiltering) {
         // allocate a frame with the settings of the context
         m_encFrame = av_frame_alloc();
-        if (!m_encFrame) LOGE << "error copying frame to m_encFrame";
+        if (!m_encFrame) {
+            LOGE << "error copying frame to m_encFrame";
+        }
 
         av_image_alloc(m_encFrame->data, m_encFrame->linesize, m_encCodecCtx->width, m_encCodecCtx->height,
                        m_encCodecCtx->pix_fmt, 1);
         m_encFrame->width = m_encCodecCtx->width;
         m_encFrame->height = m_encCodecCtx->height;
-
-        // get picture from the m_buffer
-        // reset picture type for having encoder setting it
-        m_encFrame->pict_type = AV_PICTURE_TYPE_NONE;
+        m_encFrame->pict_type = AV_PICTURE_TYPE_NONE; // reset picture type for having encoder setting it
         m_encFrame->format = m_encCodecCtx->pix_fmt;
     }
-
-    // check for the frame closest to the next pts
-    /*if (m_par.useHwAccel)
-    {
-        double nextPts = (double)ost->next_pts * (double)ost->enc->time_base.num / (double)ost->enc->time_base.den * 1000.0;
-
-        map<double, int> sortRecQueue;
-        for (unsigned int i=0; i<m_nrBufferFrames; i++)
-            if (m_videoFrames[i].encTime >= 0)
-                sortRecQueue[std::abs(m_videoFrames[i].encTime - nextPts)] = i;
-
-        if (sortRecQueue.empty()) {
-            LOGE << "sortRecQueue.empty()";
-            this_thread::sleep_for(500us);
-            return -1;
-        }
-    } */
 
     // copy raw rgb buffer to AVFrame
     // check if the frame to encode is a reference to an external buffer or a regular recQueue.buffer
@@ -1053,18 +1000,24 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
 }
 
 int FFMpegEncode::writeFrame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt) {
+#if defined(ARA_USE_LIBRTMP) && defined(_WIN32)
+    if (m_isRtmp) {
+        if (m_rtmpSender.first_packet) {
+            LOG << "got first packet!";
+            auto newPacket = m_rtmpSender.extract_avc_headers(pkt->data, pkt->size, util::OBS_ENCODER_VIDEO);
+            m_rtmpSender.first_packet = false;
+            m_rtmpSender.getStream().writePos++;
+        }
+    }
+#endif
+
     // rescale output packet timestamp values from codec to stream timebase
     av_packet_rescale_ts(pkt, *time_base, st->time_base);
     pkt->stream_index = st->index;
 
-    int r=0;
-
     // Write the compressed frame to the media file.
     // NOTE: in case of network streams av_interleaved_write_frame will wait until the packet reached and thus contain the network delay
-
-    //logPacket(fmt_ctx, pkt);
-
-    r = av_interleaved_write_frame(fmt_ctx, pkt);
+    auto r = av_interleaved_write_frame(fmt_ctx, pkt);
     if (r < 0) {
         LOGE << "av_interleaved_write_frame error";
     }
@@ -1092,13 +1045,10 @@ void FFMpegEncode::closeStream(AVFormatContext *oc, FFMpegEncode::OutputStream *
 
 /// fixFps: force monotonic timestamps,
 /// bufPtr: optionally download to an external buffer
-void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr) {
+void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr, bool monotonic) {
     if (!m_doRec) {
         return;
     }
-
-    //double fixFrameDur = fixFps != 0.0 ? (1000.0 / fixFps) : 1.0;
-   // unique_lock<mutex> l(m_writeMtx);
 
     auto now = chrono::system_clock::now();
     if (!m_gotFirstFrame) {
@@ -1112,16 +1062,17 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
     }
 
     // if the next frame comes earlier than fixFps would allow, skip it
-    if ((m_par.useHwAccel && fixFps != 0.0) && m_encTimeDiff < m_frameDur * 0.75){
+    if (((m_par.useHwAccel && fixFps != 0.0) && m_encTimeDiff < m_frameDur * 0.75 && !monotonic)
+        || (fixFps == 0.0 && (m_frameDur - m_encTimeDiff) > (m_frameDur * 0.5) && !monotonic)) {
         return;
     }
 
-    if (fixFps == 0.0 && (m_frameDur - m_encTimeDiff) > (m_frameDur * 0.5)){
-        return;
+    while (m_videoFrames.isFilled()) {
+        std::this_thread::sleep_for(std::chrono::microseconds(100)); // skip frame and wait
     }
 
     // skip frame if queue full
-    if (m_videoFrames.isFilled()) {
+    /*if (m_videoFrames.isFilled()) {
         LOGE << "FFMpegEncode::downloadGlFbToVideoFrame(): buffer queue full, skipping frame";
         if (m_bufOvrCb) {
             m_lastBufOvrTime = chrono::system_clock::now();
@@ -1138,12 +1089,11 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
                 m_bufOvrCb(false);
             }
         }
-    }
+    }*/
 
     bool gotData = false;
     if (!bufPtr) {
         if (m_pbos.getFillAmt() > 0 && !m_videoFrames.isFilled()) {
-            LOG << "read buf " << m_pbos.getReadBuff();
             glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbos.getReadBuff());
 #ifdef ARA_USE_GLES31
             auto ptr = static_cast<uint8_t*>(glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, m_nbytes, GL_MAP_READ_BIT));
@@ -1151,26 +1101,22 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
             auto ptr = static_cast<uint8_t *>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
 #endif
             if (ptr) {
-                LOG << ptr;
                 memcpy(m_videoFrames.getWriteBuff().buffer.data(), ptr, m_nbytes);
                 m_videoFrames.getWriteBuff().bufferPtr = m_videoFrames.getWriteBuff().buffer.data();
                 glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
             } else {
                 LOGE << "Failed to map the m_buffer";
             }
-
             m_pbos.consumeCountUp();
             gotData = true;
         }
 
         // write pbo with actual data
         if (!m_pbos.isFilled()) {
-            LOG << "write buf " << m_pbos.getWriteBuff();
             glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbos.getWriteBuff());
             glReadPixels(0, 0, m_par.width, m_par.height, m_glDownloadFmt, GL_UNSIGNED_BYTE, 0);
             m_pbos.feedCountUp();
         }
-
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     } else {
         m_videoFrames.getWriteBuff().bufferPtr = bufPtr;
@@ -1193,12 +1139,12 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
 
 void FFMpegEncode::savePngSeq() {
     if (m_savePngFirstCall) {
-        if (filesystem::exists(m_downloadFolder)) {
-            filesystem::remove_all(m_downloadFolder);
+        if (filesystem::exists(m_par.downloadFolder)) {
+            filesystem::remove_all(m_par.downloadFolder);
         }
 
-        if (!filesystem::exists(m_downloadFolder)) {
-            filesystem::create_directory(m_downloadFolder);
+        if (!filesystem::exists(m_par.downloadFolder)) {
+            filesystem::create_directory(m_par.downloadFolder);
         }
 
         m_saveThread = std::thread([this]{
@@ -1224,7 +1170,7 @@ void FFMpegEncode::savePngSeq() {
         auto bPtr = m_videoFrames.getReadBuff().bufferPtr;
         auto seqPtr = m_pngSeqCnt;
         m_saveQueue[m_saveQueueWrite] = [bPtr, seqPtr, this] {
-            m_downTex->saveBufToFile2D((m_downloadFolder.string()+"/seq_"
+            m_downTex->saveBufToFile2D((m_par.downloadFolder+"/seq_"
                                         +std::to_string(seqPtr / 1000 % 10)
                                         +std::to_string(seqPtr / 100 % 10)
                                         +std::to_string(seqPtr / 10 % 10)
@@ -1247,9 +1193,7 @@ void FFMpegEncode::savePngSeq() {
 }
 
 #ifdef WITH_AUDIO
-
-void FFMpegEncode::mediaRecAudioDataCallback(PAudio::paPostProcData* paData)
-{
+void FFMpegEncode::mediaRecAudioDataCallback(PAudio::paPostProcData* paData) {
     float mixSamp = 0.f;
 
     // write interleaved
@@ -1274,7 +1218,6 @@ void FFMpegEncode::mediaRecAudioDataCallback(PAudio::paPostProcData* paData)
             }
     }
 }
-
 #endif
 
 void FFMpegEncode::freeGlResources() {

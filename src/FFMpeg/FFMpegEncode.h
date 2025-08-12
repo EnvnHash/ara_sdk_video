@@ -44,18 +44,16 @@ public:
     void        addStream(FFMpegEncode::OutputStream *ost, AVFormatContext *oc, const AVCodec **codec, enum AVCodecID codec_id);
     void        openAudio(const AVCodec *codec, FFMpegEncode::OutputStream *ost, AVDictionary *opt_arg);
     AVFrame*    getAudioFrame(OutputStream *ost, bool clear);
-    int         writeAudioFrame(AVFormatContext *oc, FFMpegEncode::OutputStream *ost, bool clear);
-    void        openVideo(const AVCodec *codec, FFMpegEncode::OutputStream *ost, AVDictionary *opt_arg);
-    int         writeVideoFrame(AVFormatContext *oc, FFMpegEncode::OutputStream *ost);
-    void        closeStream(AVFormatContext *oc, FFMpegEncode::OutputStream *ost);
+    int         writeAudioFrame(AVFormatContext *oc, OutputStream *ost, bool clear);
+    void        openVideo(const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg);
+    int         writeVideoFrame(AVFormatContext *oc, OutputStream *ost);
+    void        closeStream(AVFormatContext *oc, OutputStream *ost);
 
-    void        downloadGlFbToVideoFrame(double fixFps=0.0, unsigned char* bufPtr=nullptr);
+    void        downloadGlFbToVideoFrame(double fixFps=0.0, unsigned char* bufPtr=nullptr, bool monotonic = false);
     void        freeGlResources();
 
     [[nodiscard]] bool isRecording() const          { return m_doRec; }
     [[nodiscard]] bool isInited() const             { return m_inited; }
-    void setVideoBitRate(unsigned int bitRate)      { m_videoBitRate = static_cast<int32_t>(bitRate); }
-    void setAudioBitRate(unsigned int bitRate)      { m_audioBitRate = static_cast<int32_t>(bitRate); }
     void setHFlip(bool val)                         { m_flipH = val; }
     void setBufOvrCb(std::function<void(bool)> f)   { m_bufOvrCb = std::move(f); }
 
@@ -63,6 +61,7 @@ protected:
     virtual void    recThread();
     int             setHwframeCtx(AVCodecContext *ctx, AVBufferRef *hw_device_ctx);
     void            savePngSeq();
+    void            setVideoCodePar(OutputStream *ost, AVCodecContext *context, enum AVCodecID codec_id);
 
 #ifdef WITH_AUDIO
     PAudio* 				pa;
@@ -71,7 +70,6 @@ protected:
     ffmpeg::EncodePar               m_par{};
     std::string				        m_fileType;
     std::string				        m_forceCodec;
-
     AVDictionary*			        m_opt=nullptr;
     const AVOutputFormat*		    m_fmt=nullptr;
     AVFormatContext*		        m_oc=nullptr;
@@ -94,24 +92,14 @@ protected:
     uint8_t**				    m_dst_samples_data=nullptr;
     int       				    m_dst_samples_linesize{};
     int       				    m_dst_samples_size{};
-    struct SwrContext*		    m_swr_ctx = nullptr;
     std::vector<float> 		    m_audioQueue;
-
     AVFrame*				    m_inpFrame=nullptr;
     AVFrame*				    m_filt_frame=nullptr;
     AVFrame*				    m_hw_frame=nullptr;
-
     int 					    m_ret=0;
     std::array<bool, 2>         m_have{};
-    int                         m_encode_video = 0;
-    int                         m_encode_audio = 0;
-
-    int						    m_audioBitRate=64000;
-    int						    m_videoBitRate=800000;
-
-    static inline int32_t       m_nrBufferFrames = 64;
-    unsigned int 			    m_glNrBytesPerPixel = 4;
-
+    unsigned int			    m_nrBufferFrames = 16;
+    unsigned int 			    m_glNrBytesPerPixel = 3;
     bool					    m_savePngFirstCall = true;
     bool					    m_savePngSeq = false;
     bool					    m_doRec = false;
@@ -124,19 +112,12 @@ protected:
     bool					    m_isRtmp = false;
     bool					    m_gotFirstFrame = false;
     bool					    m_av_interleaved_wrote_first = false;
-    std::atomic<bool>		    m_implictGlFbDownload = false;
-
-    double                      m_timeBaseMult=1.0;
     double                      m_frameDur=0.0;
     double                      m_encTimeDiff=0.0;
     double                      m_encElapsedTime=0.0;
-
     std::thread*	 		    m_Thread=nullptr;
     std::thread	 		        m_glDownThread;
     std::thread	 		        m_saveThread;
-
-    //--------------------------------------------------------
-
     std::array<OutputStream, 2> m_outStream;
 
     std::vector< std::vector<unsigned int> > m_mixDownMap;
@@ -159,21 +140,18 @@ protected:
     StopWatch                   m_scaleTime;
     Conditional                 m_recCond;
     Conditional                 m_stopCond;
-    //std::mutex                  m_writeMtx;
-
-    std::chrono::system_clock::time_point   m_lastEncTime{};
-    std::chrono::system_clock::time_point   m_startEncTime{};
-    std::chrono::system_clock::time_point   m_now{};
-    std::chrono::system_clock::time_point   m_lastBufOvrTime{};
     std::function<void(bool)>   m_bufOvrCb;
-
-    std::filesystem::path       m_downloadFolder;
     std::unique_ptr<Texture>    m_downTex;
     int                         m_pngSeqCnt=0;
     std::array<std::function<void()>, 64> m_saveQueue;
     int                         m_saveQueueRead=0;
     int                         m_saveQueueWrite=0;
     int                         m_saveQueueSize=0;
+
+    std::chrono::system_clock::time_point   m_lastEncTime{};
+    std::chrono::system_clock::time_point   m_startEncTime{};
+    std::chrono::system_clock::time_point   m_now{};
+    std::chrono::system_clock::time_point   m_lastBufOvrTime{};
 };
 
 }

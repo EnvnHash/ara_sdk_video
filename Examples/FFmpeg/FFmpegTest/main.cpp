@@ -240,7 +240,6 @@ int main(int argc, char** argv) {
 	LOG << "GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION);
 
     initGLEW();
-
     glViewport(0, 0, winWidth, winHeight);
 
     while (!glfwWindowShouldClose(window)) {
