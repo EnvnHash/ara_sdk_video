@@ -88,7 +88,8 @@ void FFMpegPlayer::recvAudioPacket(audioCbData& data) {
         m_bufSizeFact = std::max<size_t>(data.samples / m_paudio.getFramesPerBuffer(), 1);
 
         // register this multiplication factor to know when to free the feed block again
-        m_paudio.getCycleBuffer().allocateBuffers(m_cycBufSize * m_bufSizeFact, m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
+        m_paudio.getCycleBuffer().allocate(m_cycBufSize * m_bufSizeFact,
+                                           m_paudio.getFramesPerBuffer() * m_paudio.getNrOutChannels());
     }
 
     if (static_cast<AVSampleFormat>(data.sampleFmt) != AV_SAMPLE_FMT_FLT) {
@@ -127,9 +128,9 @@ void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
 
     if (m_videoCodecCtx) {
         if (!p.decodeYuv420OnGpu && p.destWidth && p.destHeight) {
-            m_bgraFrame.allocateBuffers(m_videoFrameBufferSize);
+            m_bgraFrame.allocate(m_videoFrameBufferSize);
             for (auto& it : m_bgraFrame.getBuffer()) {
-                it.frame = allocPicture(m_destPixFmt, p.destWidth, p.destHeight, it.buf);
+                it.frame = allocPicture(m_destPixFmt, p.destWidth, p.destHeight, &it.buf);
             }
         }
 

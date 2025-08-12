@@ -72,7 +72,7 @@ namespace ara {
 
 namespace ara::av::ffmpeg {
 
-enum class streamType : int32_t { video=0, audio };
+enum class streamType : int32_t { video=0, audio, size };
 
 struct TimedFrame {
     AVFrame* frame=nullptr;
@@ -81,6 +81,13 @@ struct TimedFrame {
 
 struct TimedPicture : public TimedFrame {
     std::vector<uint8_t> buf;
+};
+
+struct RecFrame {
+    std::vector<uint8_t>    buffer;
+    uint8_t* 				bufferPtr=nullptr;
+    int64_t                 pts{};
+    double                  encTime{}; // ms
 };
 
 struct DecodePar {
@@ -96,6 +103,18 @@ struct DecodePar {
     std::string assetName;
 
     std::function<void()> initCb;
+    std::function<void()> endCb;
+};
+
+struct EncodePar {
+    std::string     filePath;
+    std::string     downloadFolder = "pngSeq";
+    AVPixelFormat   pixelFormat{};
+    int32_t         width = 0;
+    int32_t         height = 0;
+    int32_t         fps{25};
+    int32_t         bitRate{4194304};
+    bool            useHwAccel = true;
 };
 
 static std::string m_errStr;
@@ -110,14 +129,14 @@ struct memin_buffer_data {
     size_t fileSize=0;
 };
 
-static void get_packet_defaults(AVPacket *pkt) {
+static void getPacketDefaults(AVPacket *pkt) {
     memset(pkt, 0, sizeof(*pkt));
     pkt->pts = AV_NOPTS_VALUE;
     pkt->dts = AV_NOPTS_VALUE;
     pkt->pos = -1;
 }
 
-static inline std::string& err2str(int errnum) {
+static std::string& err2str(int errnum) {
     if (m_errStr.size() < AV_ERROR_MAX_STRING_SIZE) {
         m_errStr.resize(AV_ERROR_MAX_STRING_SIZE);
     }
@@ -125,7 +144,7 @@ static inline std::string& err2str(int errnum) {
     return m_errStr;
 }
 
-static inline char* ts_make_string(char *buf, int64_t ts) {
+static char* tsMakeString(char *buf, int64_t ts) {
     if (ts == AV_NOPTS_VALUE) {
         snprintf(buf, AV_TS_MAX_STRING_SIZE, "NOPTS");
     } else {
@@ -134,7 +153,7 @@ static inline char* ts_make_string(char *buf, int64_t ts) {
     return buf;
 }
 
-static inline char* ts_make_time_string(char *buf, int64_t ts, AVRational *tb) {
+static char* tsMakeTimeString(char *buf, int64_t ts, AVRational *tb) {
     if (ts == AV_NOPTS_VALUE) {
         snprintf(buf, AV_TS_MAX_STRING_SIZE, "NOPTS");
     } else {
@@ -143,17 +162,17 @@ static inline char* ts_make_time_string(char *buf, int64_t ts, AVRational *tb) {
     return buf;
 }
 
-static inline char* ts2str(int64_t ts) {
-    ts_make_string(m_tmChar, ts);
+static char* ts2Str(int64_t ts) {
+    tsMakeString(m_tmChar, ts);
     return m_tmChar;
 }
 
-static inline char* ts2timestr(int64_t ts, AVRational* tb) {
-    ts_make_time_string(m_tmChar, ts, tb);
+static char* ts2Timestr(int64_t ts, AVRational* tb) {
+    tsMakeTimeString(m_tmChar, ts, tb);
     return m_tmChar;
 }
 
-static inline void LogCallbackShim(void *ptr, int level, const char *fmt, va_list vargs) {
+static void LogCallbackShim(void *ptr, int level, const char *fmt, va_list vargs) {
     char buffer[1024];
     vsprintf (buffer,fmt, vargs);
     if (level <= m_logLevel)
@@ -164,7 +183,25 @@ static inline void LogCallbackShim(void *ptr, int level, const char *fmt, va_lis
 #endif
 }
 
-static inline void dumpDict(AVDictionary* dict, bool printAsError=false) {
+static void logPacket(const AVFormatContext *fmt_ctx, const AVPacket *pkt) {
+    AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+    LOG << "pts:" << ffmpeg::ts2Str(pkt->pts)
+        << " pts_time: " << ffmpeg::ts2Timestr(pkt->pts, time_base)
+        << " dts: " << ffmpeg::ts2Str(pkt->dts)
+        << " dts_time: " << ffmpeg::ts2Timestr(pkt->dts, time_base)
+        << " duration: " << ffmpeg::ts2Str(pkt->duration)
+        << " duration_time: " << ffmpeg::ts2Timestr(pkt->duration, time_base)
+        << " stream_index: " << pkt->stream_index;
+}
+
+static void initFFMpeg() {
+    avdevice_register_all();
+    avformat_network_init();
+    av_log_set_level(AV_LOG_VERBOSE);
+    av_log_set_callback(&LogCallbackShim);    // custom logging
+}
+
+static void dumpDict(AVDictionary* dict, bool printAsError=false) {
     if (av_dict_count(dict) > 0) {
         AVDictionaryEntry *entry = nullptr;
         if (printAsError) {
@@ -199,6 +236,48 @@ static enum AVPixelFormat findFmtByHwType(const enum AVHWDeviceType type) {
 }
 
 static inline AVPixelFormat hwFormatToCheck{};
+
+static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>* buf=nullptr) {
+    auto picture = av_frame_alloc();
+    if (!picture) {
+        return nullptr;
+    }
+
+    picture->format = pix_fmt;
+    picture->width = width;
+    picture->height = height;
+    picture->pts = -1;
+
+    if (buf) {
+        buf->resize(av_image_get_buffer_size(pix_fmt, width, height, 1));
+        av_image_fill_arrays(picture->data, picture->linesize, buf->data(), pix_fmt, width, height, 1);
+    }
+
+    return picture;
+}
+
+static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, uint64_t channel_layout, int sample_rate, int nb_samples) {
+    auto frame = av_frame_alloc();
+    if (!frame) {
+        LOGE << "Error allocating an audio frame";
+        return nullptr;
+    }
+
+    frame->format = sample_fmt;
+    frame->channel_layout = channel_layout;
+    frame->sample_rate = sample_rate;
+    frame->nb_samples = nb_samples;
+
+    if (nb_samples) {
+        auto ret = av_frame_get_buffer(frame, 0);
+        if (ret < 0) {
+            LOGE << "Error allocating an audio m_buffer";
+            return nullptr;
+        }
+    }
+
+    return frame;
+}
 
 static enum AVPixelFormat getHwFormat(AVCodecContext*, const enum AVPixelFormat *pix_fmts) {
     const enum AVPixelFormat *p;
@@ -266,12 +345,24 @@ static GLenum getGlColorFormatFromAVPixelFormat(AVPixelFormat srcFmt) {
             {AV_PIX_FMT_NV12, GL_RED},
             {AV_PIX_FMT_NV21, GL_RED},
             {AV_PIX_FMT_RGB24, GL_BGR},
+            {AV_PIX_FMT_BGR24, GL_RGB},
+            {AV_PIX_FMT_BGRA, GL_RGBA},
     };
     return formatMap[srcFmt];
 }
 
+static int32_t getNumBytesPerPix(GLenum colorFmt) {
+    std::unordered_map<GLenum, int> formatMap {
+            {GL_RED, 1},
+            {GL_BGR, 3},
+            {GL_RGB, 3},
+            {GL_RGBA, 4},
+    };
+    return formatMap[colorFmt];
+}
+
 static double r2d(AVRational r) {
-    return r.num == 0 || r.den == 0 ? 0. : (double) r.num / (double) r.den;
+    return r.num == 0 || r.den == 0 ? 0. : static_cast<double>(r.num) / static_cast<double>(r.den);
 }
 
 static int checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec) {

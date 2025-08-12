@@ -77,15 +77,15 @@ void init() {
         void main() {                                                       \n
             gl_Position = m_pvm * vec4(position.xy * size + pos, 0.0, 1.0); \n
     });
-    vert = ara::ShaderCollector::getShaderHeader() + vert;
+    vert = ShaderCollector::getShaderHeader() + vert;
 
     std::string frag = STRINGIFY(layout(location = 0) out vec4 glFragColor; \n
         uniform vec4 color;                                                 \n
         void main() {                                                       \n
             glFragColor = color;                                            \n
     });
-    frag = ara::ShaderCollector::getShaderHeader() + frag;
-    stdCol = ara::ShaderCollector().add("buffStat", vert, frag);
+    frag = ShaderCollector::getShaderHeader() + frag;
+    stdCol = ShaderCollector().add("buffStat", vert, frag);
 
     typo = make_unique<TypoGlyphMap>(winWidth, winHeight);
     typo->loadFont((filesystem::path("resdata") / "Fonts" / "open-sans" / "OpenSans-Light.ttf").string().c_str(), &glbase.shaderCollector());

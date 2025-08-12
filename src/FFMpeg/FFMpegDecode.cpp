@@ -73,13 +73,6 @@ void FFMpegDecode::openCamera(const DecodePar& p) {
     }
 }
 
-void FFMpegDecode::initFFMpeg() {
-    avdevice_register_all();
-    avformat_network_init();
-    av_log_set_level(AV_LOG_VERBOSE);
-    av_log_set_callback(&LogCallbackShim);    // custom logging
-}
-
 void FFMpegDecode::singleThreadDecodeLoop() {
     // decode packet
     while (m_run) {
@@ -397,7 +390,7 @@ void FFMpegDecode::allocateResources(DecodePar& p) {
     }
 
     if (p.destWidth && p.destHeight) {
-        m_frames.allocateBuffers(m_videoFrameBufferSize, 1);
+        m_frames.allocate(m_videoFrameBufferSize, 1);
         for (auto& it : m_frames.getBuffer()) {
             it.frame = av_frame_alloc();
             it.frame->width = p.destWidth;
@@ -434,25 +427,6 @@ void FFMpegDecode::stop() {
     }
 }
 
-AVFrame *FFMpegDecode::allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>& buf) {
-    auto picture = av_frame_alloc();
-    if (!picture) {
-        return nullptr;
-    }
-
-    picture->format = pix_fmt;
-    picture->width = width;
-    picture->height = height;
-    picture->pts = -1;
-
-    // Allocate memory for the raw data we get when converting.
-    buf.resize(av_image_get_buffer_size(pix_fmt, width, height, 1));
-
-    // Assign appropriate parts of buffer to image planes in m_inpFrame
-    av_image_fill_arrays(picture->data, picture->linesize, buf.data(), pix_fmt, width, height, 1);
-    return picture;
-}
-
 bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format) {
     m_useAudioConversion = true;
     if (!m_audioCodecCtx){
@@ -468,7 +442,6 @@ bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format) 
     m_audioSwrCtx = swr_alloc();
     if (!m_audioSwrCtx) {
         LOGE << "Could not allocate resampler context";
-        //ret = AVERROR(ENOMEM);
         return false;
     }
 
@@ -573,10 +546,10 @@ void FFMpegDecode::incrementWritePos() {
     }
 
     // call end callback if we are done
-    if (m_endCb
+    if (m_par.endCb
         && m_frames.getWriteBuff().ptss < m_lastPtss[toType(streamType::video)]
         && m_lastPtss[toType(streamType::video)] > 0) {
-        m_endCb();
+        m_par.endCb();
     }
 
     m_lastPtss[toType(streamType::video)] = m_frames.getWriteBuff().ptss;

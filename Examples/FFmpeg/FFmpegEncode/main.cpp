@@ -8,14 +8,13 @@
 
 #include <FFMpeg/FFMpegEncode.h>
 #include <WindowManagement/GLFWWindow.h>
-
 #include <GeoPrimitives/Quad.h>
 
 using namespace std;
 using namespace ara;
 using namespace ara::av;
 
-bool			    printFps = true;
+bool			    printFps = false;
 bool			    inited = false;
 
 GLFWwindow*		    window = nullptr;
@@ -57,7 +56,7 @@ void init() {
               tex_coord = texCoord;
               gl_Position = m_pvm * position;
           });
-    vert = shCol.getShaderHeader() + "// test pic shader, vert\n" + vert;
+    vert = ara::ShaderCollector::getShaderHeader() + "// test pic shader, vert\n" + vert;
 
     std::string frag = STRINGIFY(in vec2 tex_coord;
         uniform float time;
@@ -73,7 +72,7 @@ void init() {
              color.b *= (pr > 0.5 && pr < 0.75) || pr > 0.75 || pr < 0.0 ? 1.0 : 0.0;
          });
 
-    frag = shCol.getShaderHeader()  + "// test pic shader, frag\n" + frag;
+    frag = ara::ShaderCollector::getShaderHeader()  + "// test pic shader, frag\n" + frag;
 
     testPic = shCol.add("test_pic", vert, frag);
 
@@ -81,7 +80,14 @@ void init() {
     encoder.setVideoBitRate(bitRate);
     //bool ret = encoder.init("rtmp://192.168.1.103/live/video_test", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
     //bool ret = encoder.init("rtmp://unstumm.com/live/realsense", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
-    bool ret = encoder.init("video_test.mp4", winWidth, winHeight, 30, AV_PIX_FMT_BGRA, true);
+    bool ret = encoder.init({
+                            .filePath = "video_test.mp4",
+                            .pixelFormat = AV_PIX_FMT_BGRA,
+                            .width = winWidth,
+                            .height = winHeight,
+                            .fps = 30,
+                            .useHwAccel = true
+                            });
     if (ret) {
         encoder.record();
     } else {

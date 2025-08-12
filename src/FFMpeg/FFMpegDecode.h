@@ -41,33 +41,32 @@ public:
     [[nodiscard]] unsigned short    getNrVideoTracks() const{ return m_videoNrTracks; }
 
     bool setAudioConverter(int destSampleRate, AVSampleFormat format);
-    void setFirstVideoFrameCb(std::function<void()> cbFunc) { m_firstVideoFrameCb = std::move(cbFunc); }
-    void setFirstAudioFrameCb(std::function<void()> cbFunc) { m_firstAudioFrameCb = std::move(cbFunc); }
-    void setEndCbFunc(std::function<void()> cbFunc) { m_endCb = std::move(cbFunc); }
-    void setAudioUpdtCb(std::function<void(audioCbData&)> cbFunc) { m_audioCb = std::move(cbFunc); }
-    void setVideoUpdtCb(std::function<void(AVFrame*)> cbFunc) { m_videoCb = std::move(cbFunc); }
-    void setVideoDecoderCb(std::function<void(uint8_t*)> cbFunc) { m_decodeCb = std::move(cbFunc); }
+    void setFirstVideoFrameCb(const std::function<void()>& cbFunc) { m_firstVideoFrameCb = cbFunc; }
+    void setFirstAudioFrameCb(const std::function<void()>& cbFunc) { m_firstAudioFrameCb = cbFunc; }
+    void setEndCbFunc(const std::function<void()>& cbFunc) { m_par.endCb = cbFunc; }
+    void setAudioUpdtCb(const std::function<void(audioCbData&)>& cbFunc) { m_audioCb = cbFunc; }
+    void setVideoUpdtCb(const std::function<void(AVFrame*)>& cbFunc) { m_videoCb = cbFunc; }
+    void setVideoDecoderCb(const std::function<void(uint8_t*)>& cbFunc) { m_decodeCb = cbFunc; }
     void setVideoFrameBufferSize(int size) { m_videoFrameBufferSize = size; }
 
-    virtual void clearResources();
-    bool         decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
-
-    double  					        getDurationSec(ffmpeg::streamType);
-    double 						        getFps(ffmpeg::streamType);
-    int64_t 					        getTotalFrames(ffmpeg::streamType);
-    [[nodiscard]] enum AVPixelFormat    getSrcPixFmt() const { return m_srcPixFmt; }
-    [[nodiscard]] int                   getNrBufferedFrames() { return m_frames.getFillAmt(); }
-    int                                 getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
-    int                                 getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
-    int                                 getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
-    int                                 getReadFramePtr() { return m_frames.getReadPos(); }
-    int                                 getFrameRateD() { return m_formatContext->streams[toType(ffmpeg::streamType::video)]->r_frame_rate.den; }
-    int                                 getFrameRateN() { return m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]]->r_frame_rate.num; }
-    [[nodiscard]] uint32_t		        getBitCount() const { return m_bitCount; }
-    [[nodiscard]] auto&		            getDecodeCond() { return m_decodeCond; }
+    virtual void        clearResources();
+    bool                decodeYuv420OnGpu() { return m_par.decodeYuv420OnGpu; }
+    double  			getDurationSec(ffmpeg::streamType);
+    double 				getFps(ffmpeg::streamType);
+    int64_t 			getTotalFrames(ffmpeg::streamType);
+    [[nodiscard]] auto  getSrcPixFmt() const { return m_srcPixFmt; }
+    [[nodiscard]] auto  getNrBufferedFrames() { return m_frames.getFillAmt(); }
+    auto                getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
+    auto                getVideoFrameBufferSize() { return m_videoFrameBufferSize; }
+    auto                getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
+    auto                getReadFramePtr() { return m_frames.getReadPos(); }
+    auto                getFrameRateD() { return m_formatContext->streams[toType(ffmpeg::streamType::video)]->r_frame_rate.den; }
+    auto                getFrameRateN() { return m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]]->r_frame_rate.num; }
+    [[nodiscard]] auto	getBitCount() const { return m_bitCount; }
+    [[nodiscard]] auto&	getDecodeCond() { return m_decodeCond; }
+    [[nodiscard]] auto&	getPar() const { return m_par; }
 
 protected:
-    static void     initFFMpeg();
     void            setupHwDecoding();
     int				initHwDecode(AVCodecContext* ctx, const enum AVHWDeviceType type);
     virtual void    setDefaultHwDevice();
@@ -81,9 +80,6 @@ protected:
     virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    allocateResources(ffmpeg::DecodePar& p);
-
-    static AVFrame*	allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>& buf);
-
     void 			singleThreadDecodeLoop();
     int 			decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
@@ -124,7 +120,6 @@ protected:
     Conditional 	                    m_decodeCond;
     Conditional 	                    m_endThreadCond;
 
-    std::function<void()>		        m_endCb;
     std::function<void()>		        m_firstVideoFrameCb;
     std::function<void()>		        m_firstAudioFrameCb;
     std::function<void(audioCbData&)>	m_audioCb;

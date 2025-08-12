@@ -74,7 +74,7 @@ void Portaudio::start() {
         m_numChannels = m_outputParameters.channelCount;
 
         if (m_initPar.allocateBuffers) {
-            m_cycleBuffer.allocateBuffers(m_initPar.allocateBuffers, m_framesPerBuffer * m_outputParameters.channelCount);
+            m_cycleBuffer.allocate(m_initPar.allocateBuffers, m_framesPerBuffer * m_outputParameters.channelCount);
         }
 
         if (err != paNoError) {
