@@ -1,3 +1,7 @@
+if (NOT DEFINED ARA_USE_ASSIMP)
+    set(ARA_AV_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/../..)
+endif ()
+
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideoConfigure.cmake)
 include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdkMacros.cmake)
 
