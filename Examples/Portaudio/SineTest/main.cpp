@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     // set a callback to be called after each portaudio stream callback finish
     pa.setStreamProcCb([&](const void*, void*, uint64_t) {
         unique_lock<mutex> l(pa.getStreamMtx());
-        auto bufPtr = pa.getCycleBuffer().getWriteBuff().getDataPtr();
+        auto bufPtr = pa.getCycleBuffer().getWriteBuff().data();
         for (auto frame=0; frame<pa.getFramesPerBuffer(); ++frame) {
             for (auto chan=0; chan<pa.getNrOutChannels(); ++chan) {
                 *bufPtr++ = static_cast<float>(sinTable[phase[chan] % sinTable.size()]);

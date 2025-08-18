@@ -14,6 +14,8 @@ if (NOT ARA_AV_SOURCE_DIR)
     endif()
 endif()
 
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideoConfigure.cmake)
+
 if (NOT ARA_AV_IS_SUBPROJECT)
     include(FetchContent)
     Set(FETCHCONTENT_QUIET FALSE)

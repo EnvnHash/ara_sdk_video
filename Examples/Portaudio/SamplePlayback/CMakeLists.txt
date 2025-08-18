@@ -1,33 +1,20 @@
 cmake_minimum_required(VERSION 3.12)
 
-set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
-
-include(GeneralSettings)
-include(VisualStudioSettings)
-
 project(SamplePlayback)
-
-include_directories(
-    ${ARA_AV_SOURCE_DIR}/src
-)
 
 set(SOURCES main.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-include(GLBaseDependencies)
-include(GLBaseCopyDependencies)
-include(Gtk3Include)
-include(UtilitiesDependencies)
-include(CMakeRC)
-include(ResCompInclude)
+include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdk.cmake)
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
-set(TARGET_LIBS ${ara_sdk_video_LIBRARIES})
+include_directories(
+    ${ara_sdk_INCLUDE_DIRS}
+    ${ara_sdk_video_INCLUDE_DIRS}
+)
 
-list(APPEND TARGET_LIBS GLBase SceneGraph AudioVideo Utilities)
-
-target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS})
+target_link_libraries (${PROJECT_NAME} ${ara_sdk_video_LIBRARIES} ${ara_sdk_LIBRARIES} GLBase SceneGraph AudioVideo Utilities)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/Assets/audio/stereol.wav ${CMAKE_CURRENT_BINARY_DIR}
