@@ -3,20 +3,14 @@ cmake_minimum_required(VERSION 3.12)
 project(AudioVideo VERSION 0.1 LANGUAGES CXX)
 
 include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/GeneralSettings.cmake)
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-add_compile_definitions(VIDEO_EXPORT)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
-if(UNIX)
-	set(CUDA_DIR /usr/local/cuda)
-endif()
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 include_directories(
-	${ARA_AV_SOURCE_DIR}/src
-	${ARA_AV_SOURCE_DIR}/third_party/libyuv/include
-	${ARA_SDK_SOURCE_DIR}/Libraries/third_party/nameof
-	)
-
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
+	${ara_sdk_INCLUDE_DIRS}
+	${ara_sdk_video_INCLUDE_DIRS}
+)
 
 file(GLOB GLB_SRC *.cpp)
 file(GLOB AUDIOFILE_SRC AudioFile/*.cpp)
@@ -77,12 +71,10 @@ foreach(DIR IN LISTS REQUIRED_THIRD_PARTY_DIRS)
 			)
 		endif()
 	endif ()
-
 endforeach()
 
-
-set(VIDEO_ALL_SRC ${GLB_SRC} ${AUDIOFILE_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_NDI} ${GLB_PORTAUDIO} ${GLB_OPENAL} ${GLB_REALSENSE} CACHE INTERNAL "video_src_all")
-
+set(VIDEO_ALL_SRC test_class.cpp)
+set(VIDEO_ALL_SRC ${GLB_SRC} ${AUDIOFILE_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_NDI} ${GLB_PORTAUDIO} ${GLB_OPENAL} ${GLB_REALSENSE})
 if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})
 endif ()

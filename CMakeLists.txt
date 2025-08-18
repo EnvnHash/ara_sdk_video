@@ -29,8 +29,6 @@ if (NOT ARA_AV_IS_SUBPROJECT)
     include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdk.cmake)
 endif()
 
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraAvConfigure.cmake)
-
 add_subdirectory(Examples)
 add_subdirectory(src)
 add_subdirectory(third_party)

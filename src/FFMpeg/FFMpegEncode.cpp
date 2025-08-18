@@ -304,7 +304,11 @@ void FFMpegEncode::recThread() {
 
     // save rest of pics m_buffer
     while (m_videoFrames.getFillAmt() > 0) {
-        writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
+        try {
+            writeVideoFrame(m_oc, &m_outStream[toType(streamType::video)]);
+        } catch(std::runtime_error& e) {
+            LOGE << "FFMpegEncode Error: " << e.what();
+        }
     }
 
     // save rest of audio m_buffer
@@ -606,15 +610,15 @@ void FFMpegEncode::openAudio(const AVCodec *codec, OutputStream *ost, AVDictiona
     m_src_nb_samples = (c->codec->capabilities & AV_CODEC_CAP_VARIABLE_FRAME_SIZE) ? 10000 :c->frame_size;
     nb_samples = m_src_nb_samples;
 
-    ret = av_samples_alloc_array_and_samples(&m_src_samples_data, &m_src_samples_linesize, c->channels,
+    ret = av_samples_alloc_array_and_samples(&m_src_samples_data, &m_src_samples_linesize, c->ch_layout.nb_channels,
                                              m_src_nb_samples, c->sample_fmt, 0);
     if (ret < 0) {
         LOGE << "Could not allocate source samples";
         return;
     }
 
-    ost->frame     = allocAudioFrame(c->sample_fmt, c->channel_layout, c->sample_rate, nb_samples);
-    ost->tmp_frame = allocAudioFrame(AV_SAMPLE_FMT_S16, c->channel_layout, c->sample_rate, nb_samples);
+    ost->frame     = allocAudioFrame(c->sample_fmt, c->ch_layout, c->sample_rate, nb_samples);
+    ost->tmp_frame = allocAudioFrame(AV_SAMPLE_FMT_S16, c->ch_layout, c->sample_rate, nb_samples);
 
     // copy the stream parameters to the muxer
     ret = avcodec_parameters_from_context(ost->st->codecpar, c);
@@ -631,12 +635,12 @@ void FFMpegEncode::openAudio(const AVCodec *codec, OutputStream *ost, AVDictiona
     }
 
     // set options
-    av_opt_set_int       (ost->swr_ctx, "in_channel_count",   c->channels,       0);
-    av_opt_set_int       (ost->swr_ctx, "in_sample_rate",     c->sample_rate,    0);
-    av_opt_set_sample_fmt(ost->swr_ctx, "in_sample_fmt",      AV_SAMPLE_FMT_S16, 0);
-    av_opt_set_int       (ost->swr_ctx, "out_channel_count",  c->channels,       0);
-    av_opt_set_int       (ost->swr_ctx, "out_sample_rate",    c->sample_rate,    0);
-    av_opt_set_sample_fmt(ost->swr_ctx, "out_sample_fmt",     c->sample_fmt,     0);
+    av_opt_set_int       (ost->swr_ctx, "in_channel_count",   c->ch_layout.nb_channels, 0);
+    av_opt_set_int       (ost->swr_ctx, "in_sample_rate",     c->sample_rate,           0);
+    av_opt_set_sample_fmt(ost->swr_ctx, "in_sample_fmt",      AV_SAMPLE_FMT_S16,        0);
+    av_opt_set_int       (ost->swr_ctx, "out_channel_count",  c->ch_layout.nb_channels, 0);
+    av_opt_set_int       (ost->swr_ctx, "out_sample_rate",    c->sample_rate,           0);
+    av_opt_set_sample_fmt(ost->swr_ctx, "out_sample_fmt",     c->sample_fmt,            0);
 
     // initialize the resampling context
     if ((ret = swr_init(ost->swr_ctx)) < 0) {
@@ -648,14 +652,14 @@ void FFMpegEncode::openAudio(const AVCodec *codec, OutputStream *ost, AVDictiona
     // ensuring that the output m_buffer will contain at least all the
     // converted input samples
     m_max_dst_nb_samples = m_src_nb_samples;
-    ret = av_samples_alloc_array_and_samples(&m_dst_samples_data, &m_dst_samples_linesize, c->channels,
+    ret = av_samples_alloc_array_and_samples(&m_dst_samples_data, &m_dst_samples_linesize, c->ch_layout.nb_channels,
                                              m_max_dst_nb_samples, c->sample_fmt, 0);
     if (ret < 0) {
         LOGE << "Could not allocate destination samples";
         return;
     }
 
-    m_dst_samples_size = av_samples_get_buffer_size(nullptr, c->channels, m_max_dst_nb_samples, c->sample_fmt, 0);
+    m_dst_samples_size = av_samples_get_buffer_size(nullptr, c->ch_layout.nb_channels, m_max_dst_nb_samples, c->sample_fmt, 0);
 }
 
 AVFrame* FFMpegEncode::getAudioFrame(OutputStream *ost, bool clear) {
@@ -663,27 +667,27 @@ AVFrame* FFMpegEncode::getAudioFrame(OutputStream *ost, bool clear) {
     auto *q = reinterpret_cast<int16_t*>(frame->data[0]);
     int newSize = 0;
 
-    if (static_cast<int32_t>(m_audioQueue.size()) >= frame->nb_samples * ost->enc->channels) {
+    if (static_cast<int32_t>(m_audioQueue.size()) >= frame->nb_samples * ost->enc->ch_layout.nb_channels) {
         for (int j=0;j<frame->nb_samples;j++) {
-            for (int chanNr = 0; chanNr < ost->enc->channels; chanNr++) {
-                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
+            for (int chanNr = 0; chanNr < ost->enc->ch_layout.nb_channels; chanNr++) {
+                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->ch_layout.nb_channels + chanNr] * 32767);
             }
         }
 
-        newSize = static_cast<int32_t>(m_audioQueue.size()) - frame->nb_samples * ost->enc->channels;
-        m_audioQueue.erase(m_audioQueue.begin(), m_audioQueue.begin() + frame->nb_samples * ost->enc->channels);
+        newSize = static_cast<int32_t>(m_audioQueue.size()) - frame->nb_samples * ost->enc->ch_layout.nb_channels;
+        m_audioQueue.erase(m_audioQueue.begin(), m_audioQueue.begin() + frame->nb_samples * ost->enc->ch_layout.nb_channels);
         m_audioQueue.resize(newSize);
 
     } else if (clear) {
-        for (unsigned int j=0; j<(m_audioQueue.size() / ost->enc->channels); j++) {
-            for (int chanNr = 0; chanNr < ost->enc->channels; chanNr++) {
-                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
+        for (unsigned int j=0; j<(m_audioQueue.size() / ost->enc->ch_layout.nb_channels); j++) {
+            for (int chanNr = 0; chanNr < ost->enc->ch_layout.nb_channels; chanNr++) {
+                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->ch_layout.nb_channels + chanNr] * 32767);
             }
         }
 
         // add zeros to complete the frame_size
-        for (unsigned int j=0; j<frame->nb_samples - (m_audioQueue.size() / ost->enc->channels); j++) {
-            for (int chanNr = 0; chanNr < ost->enc->channels; chanNr++) {
+        for (unsigned int j=0; j<frame->nb_samples - (m_audioQueue.size() / ost->enc->ch_layout.nb_channels); j++) {
+            for (int chanNr = 0; chanNr < ost->enc->ch_layout.nb_channels; chanNr++) {
                 *q++ = 0;
             }
         }
@@ -838,7 +842,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
     m_encFrame = ost->frame;
 
     if (!m_encFrame) {
-        return 0;
+        throw runtime_error("encFrame not allocated");
     }
 
     // only write if there was a frame downloaded
@@ -846,7 +850,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
         // allocate a frame with the settings of the context
         m_encFrame = av_frame_alloc();
         if (!m_encFrame) {
-            LOGE << "error copying frame to m_encFrame";
+            throw runtime_error("error copying frame to m_encFrame");
         }
 
         av_image_alloc(m_encFrame->data, m_encFrame->linesize, m_encCodecCtx->width, m_encCodecCtx->height,
@@ -915,11 +919,11 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
         // killt den frame
         m_ret = av_buffersrc_add_frame(m_buffersrc_ctx, m_encFrame);
         if (m_ret != 0) {
-            std::cout << "Error while feeding the filtergraph. error code " << m_ret << std::endl;
+            throw runtime_error("Error while feeding the filtergraph. error code " + std::to_string(m_ret));
         }
 
         if (av_buffersink_get_frame(m_buffersink_ctx, m_filt_frame) < 0) {
-            std::cout << "error filtering frame" << std::endl;
+            throw runtime_error("error filtering frame");
         }
 
         m_filt_frame->pts = m_inpFrame->pts;
@@ -929,7 +933,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
 
         // Note: libyuv always take planes in reverse order: ffmpeg BGRA corresponds to libyuv ARGB
         if (encPixFmt == AV_PIX_FMT_NV12) {
-            AVFrame* inFrame = m_inpFrame;
+            auto inFrame = m_inpFrame;
 
             if (m_par.pixelFormat == AV_PIX_FMT_RGB24) {
                 libyuv::RAWToARGB(m_inpFrame->data[0], m_stride[0],
@@ -963,12 +967,15 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
 
     if (m_par.useHwAccel) {
         if ((m_ret = av_hwframe_transfer_data(m_hw_frame, ost->frame, 0)) < 0) { // around 0.22 ms for a HD
-            return -1;
+            throw runtime_error("av_hwframe_transfer_data failed");
         }
         m_encFrame = m_hw_frame;
     }
 
-     av_init_packet(&m_decPkt);
+    auto decPkt = av_packet_alloc();
+    if (!decPkt) {
+        throw std::runtime_error("Could not alloc packet");
+    }
 
     if (!m_par.useHwAccel) {
         m_ret = av_frame_make_writable(ost->frame);
@@ -978,24 +985,26 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
     auto frame = m_useFiltering ? m_filt_frame : m_encFrame;
     m_ret = avcodec_send_frame(m_encCodecCtx, frame);
     if (m_ret < 0) {
-        LOGE <<  "Error sending a frame for encoding";
-        av_packet_unref(&m_decPkt);
-        return 0;
+        av_packet_unref(decPkt);
+        av_packet_free(&decPkt);
+        throw std::runtime_error("Error sending a frame for encoding");
     }
 
     while (m_ret >= 0) {
-        m_ret = avcodec_receive_packet(m_encCodecCtx, &m_decPkt);
+        m_ret = avcodec_receive_packet(m_encCodecCtx, decPkt);
         if (m_ret == AVERROR(EAGAIN) || m_ret == AVERROR_EOF) {
             break;
         } else if (m_ret < 0) {
-            LOGE <<  "Error during encoding";
-            break;
+            throw std::runtime_error("Error during encoding");
+            //break;
         }
 
-        m_decPkt.duration = (int64_t) (1.0 / static_cast<double>(m_par.fps) * 1000.0);
-        m_ret = writeFrame(oc, &ost->enc->time_base, ost->st, &m_decPkt); // paket is freed implicitly
+        decPkt->duration = (int64_t) (1.0 / static_cast<double>(m_par.fps) * 1000.0);
+        m_ret = writeFrame(oc, &ost->enc->time_base, ost->st, decPkt); // paket is freed implicitly
     }
 
+    av_packet_unref(decPkt);
+    av_packet_free(&decPkt);
     return m_encFrame ? 0 : 1;
 }
 

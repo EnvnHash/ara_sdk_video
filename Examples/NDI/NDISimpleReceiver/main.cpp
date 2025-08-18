@@ -12,7 +12,7 @@
 #include <Processing.NDI.Lib.h>
 
 using namespace std;
-using namespace ara::glb;
+using namespace ara;
 
 GLFWwindow*		    window = nullptr;
 GLBase              glbase;
@@ -98,10 +98,7 @@ void init()
     //stdTex = shCol.getStdTex();
     stdTex = initRenderShdr();
 
-    quad = make_unique<Quad>(-1.f, -1.f, 2.f, 2.f,
-                             glm::vec3(0.f, 0.f, 1.f),
-                             1.f, 0.f, 0.f, 1.f,
-                             nullptr, 1, true);  // create a Quad, standard width and height (normalized into -1|1), static red
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 }
 
 static void display()
@@ -189,6 +186,8 @@ static void display()
         case NDIlib_frame_type_status_change:
             std::cout <<  "NDIlib_frame_type_status_change." << std::endl;
             break;
+        default:
+            break;
     }
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -269,7 +268,7 @@ int main(int argc, char** argv)
 	LOG << "Version:  " << glGetString(GL_VERSION);
 	LOG << "GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION);
 
-    ara::glb::initGLEW();
+    ara::initGLEW();
 
     glViewport(0, 0, winWidth, winHeight);
 

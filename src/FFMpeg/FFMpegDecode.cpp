@@ -320,7 +320,7 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
 
 void FFMpegDecode::parseAudioCodecPar(int32_t i, AVCodecParameters* localCodecParameters, const AVCodec* localCodec) {
     // TODO : there is a problem with 5.1, AAC which is detected as 1 channel
-    m_audioNumChannels = localCodecParameters->channels;
+    m_audioNumChannels = localCodecParameters->ch_layout.nb_channels;
     m_streamIndex[toType(streamType::audio)] = i;
     m_audioCodec = localCodec;
 
@@ -439,9 +439,9 @@ bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format) 
         LOGE << "FFMpegDecode::setAudioConverter failed!, m_audioCodecCtx == NULL";
         return false;
     }
-    m_dstChannelLayout = m_audioCodecCtx->channels == 1 ? AV_CH_LAYOUT_MONO : AV_CH_LAYOUT_STEREO;
+    av_channel_layout_default(&m_dstChannelLayout, m_audioCodecCtx->ch_layout.nb_channels == 1 ? 1 : 2);
     m_dstSampleRate = destSampleRate;
-    m_dstAudioNumChannels = m_dstChannelLayout == AV_CH_LAYOUT_MONO ? 1 : 2;
+    m_dstAudioNumChannels = m_dstChannelLayout.nb_channels;
     m_dstSampleFmt = format;
 
     // create resampler context
@@ -451,17 +451,12 @@ bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format) 
         return false;
     }
 
-    // If you don't know the channel layout, get it from the number of channels.
-    if (m_audioCodecCtx->channel_layout == 0) {
-        m_audioCodecCtx->channel_layout = av_get_default_channel_layout(m_audioCodecCtx->channels);
-    }
-
     // set options
-    av_opt_set_int(m_audioSwrCtx, "in_channel_layout", static_cast<int64_t>(m_audioCodecCtx->channel_layout), 0);
+    av_opt_set_chlayout(m_audioSwrCtx, "in_chlayout", &m_audioCodecCtx->ch_layout, 0);
     av_opt_set_int(m_audioSwrCtx, "in_sample_rate", m_audioCodecCtx->sample_rate, 0);
     av_opt_set_sample_fmt(m_audioSwrCtx, "in_sample_fmt", m_audioCodecCtx->sample_fmt, 0);
 
-    av_opt_set_int(m_audioSwrCtx, "out_channel_layout", m_dstChannelLayout, 0);
+    av_opt_set_chlayout(m_audioSwrCtx, "out_chlayout", &m_dstChannelLayout, 0);
     av_opt_set_int(m_audioSwrCtx, "out_sample_rate", m_dstSampleRate, 0);
     av_opt_set_sample_fmt(m_audioSwrCtx, "out_sample_fmt", m_dstSampleFmt, 0);
 
@@ -570,8 +565,8 @@ void FFMpegDecode::transferFromHwToCpu() {
     }
 
     m_frames.getWriteBuff().frame->pts = m_frame->pts;
-    m_frames.getWriteBuff().frame->pkt_size = m_frame->pkt_size;
-    m_frames.getWriteBuff().frame->coded_picture_number = m_frame->coded_picture_number;
+    //m_frames.getWriteBuff().frame->pkt_size = m_frame->pkt_size;
+    //m_frames.getWriteBuff().frame->coded_picture_number = m_frame->coded_picture_number;
     m_frames.getWriteBuff().frame->pict_type = m_frame->pict_type;
 }
 
@@ -611,7 +606,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
 
         // we got a valid packet!!
         if (m_run && response >= 0) {
-            int data_size = av_samples_get_buffer_size(nullptr, codecContext->channels,
+            int data_size = av_samples_get_buffer_size(nullptr, codecContext->ch_layout.nb_channels,
                                                        m_audioFrame->nb_samples,
                                                        codecContext->sample_fmt, 1);
 
@@ -627,7 +622,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
                                                                           m_audioCodecCtx->sample_rate, AV_ROUND_UP));
 
                     // buffer is going to be directly written to a rawaudio file, no alignment
-                    m_dstAudioNumChannels = av_get_channel_layout_nb_channels(m_dstChannelLayout);
+                    m_dstAudioNumChannels = m_dstChannelLayout.nb_channels;
                     response = av_samples_alloc_array_and_samples((uint8_t***)&m_dstSampleBuffer, &m_dstAudioLineSize,
                                                                   m_dstAudioNumChannels, m_dstNumSamples, m_dstSampleFmt, 0);
                     if (response < 0) {
@@ -655,7 +650,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
                 if (!m_dstSampleBuffer) {
                     // buffer is going to be directly written to a raw audio, no alignment
                     response = av_samples_alloc_array_and_samples((uint8_t***)&m_dstSampleBuffer, &m_audioFrame->linesize[0],
-                                                                  m_audioFrame->channels, m_audioFrame->nb_samples,
+                                                                  m_audioFrame->ch_layout.nb_channels, m_audioFrame->nb_samples,
                                                                   static_cast<AVSampleFormat>(m_audioFrame->format), 0);
                     if (response < 0) {
                         LOGE << "FFmpegDecode: Error allocation audio buffer";

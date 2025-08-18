@@ -24,7 +24,7 @@ GLFWwindow*		    window = nullptr;
 GLBase              glbase;
 Shaders*            stdTex;
 unique_ptr<Quad>    quad;
-FFMpegDecode        player;
+FFMpegPlayer        player;
 unique_ptr<Texture> test_png;
 int				    winWidth = 1280;
 int				    winHeight = 800;
@@ -37,8 +37,7 @@ NDIlib_send_instance_t pNDI_send;
 NDIlib_metadata_frame_t NDI_connection_type;
 NDIlib_video_frame_v2_t NDI_video_frame;
 
-static void output_error(int error, const char* msg)
-{
+static void output_error(int error, const char* msg) {
 	fprintf(stderr, "Error: %s\n", msg);
 }
 
@@ -59,11 +58,8 @@ void init() {
     test_png->keepBitmap(true);
     test_png->loadTexture2D("resdata/FullHD_Pattern.png");
 
-    // stdTex = m_shCol.getStdTex();
-    quad = make_unique<Quad>(-1.f, -1.f, 2.f, 2.f,
-                             glm::vec3(0.f, 0.f, 1.f),
-                             1.f, 0.f, 0.f, 1.f,
-                             nullptr, 1, true);  // create a Quad, standard width and height (normalized into -1|1), static red
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
+
 #ifdef _WIN32
     player.OpenCamera(&glbase, "USB2.0 HD UVC WebCam", winWidth, winHeight, false);
 #elif __linux__
@@ -111,16 +107,13 @@ void init() {
     player.start(glfwGetTime());
 }
 
-static void display()
-{
+static void display() {
 	dt = glfwGetTime() - actTime;
 
 	// check Framerate every 2 seconds
-	if (printFps)
-	{
+	if (printFps) {
 		double newTimeFmod = std::fmod(glfwGetTime(), 2.0);
-		if (newTimeFmod < timeFmod)
-		{
+		if (newTimeFmod < timeFmod) {
 			printf("dt: %f fps: %f \n", dt, 1.0 / dt);
 		}
 		actTime = glfwGetTime();
@@ -144,10 +137,8 @@ static void display()
 	glfwSwapBuffers(window);
 }
 
-int main(int argc, char** argv)
-{
-    if (!NDIlib_initialize())
-    {
+int main(int argc, char** argv) {
+    if (!NDIlib_initialize()) {
         printf("[ERROR] Cannot run NDI.\n");
         return 0;
     }
@@ -176,13 +167,14 @@ int main(int argc, char** argv)
 
     glfwSetErrorCallback(output_error);
 
-	if (!glfwInit())
-		LOGE << "Failed to initialize GLFW";
+	if (!glfwInit()) {
+        LOGE << "Failed to initialize GLFW";
+    }
 
  	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
 	glfwWindowHint(GLFW_DECORATED, GL_TRUE);
 
-	window = glfwCreateWindow(winWidth, winHeight, "Warping Tool", NULL, NULL);
+	window = glfwCreateWindow(winWidth, winHeight, "Warping Tool", nullptr, nullptr);
 	if (!window) {
 		LOGE << "Failed to create GLFW window";
 		glfwTerminate();
@@ -201,12 +193,10 @@ int main(int argc, char** argv)
 	LOG << "Version:  " << glGetString(GL_VERSION);
 	LOG << "GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION);
 
-    ara::glb::initGLEW();
-
+    ara::initGLEW();
     glViewport(0, 0, winWidth, winHeight);
 
-    while (!glfwWindowShouldClose(window))
-	{
+    while (!glfwWindowShouldClose(window)) {
 		display();
         glfwPollEvents();
     }

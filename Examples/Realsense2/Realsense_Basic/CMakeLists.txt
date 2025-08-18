@@ -26,8 +26,7 @@ include(GLBaseDependencies)
 include(GLBaseCopyDependencies)
 include(Gtk3Include)
 include(UtilitiesDependencies)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
 set(TARGET_LIBS GLBase GLSceneGraph VideoInput Utilities)
 

@@ -108,7 +108,7 @@ protected:
 
     enum AVHWDeviceType 		        m_hwDeviceType{};
     AVBufferRef*				        m_hwDeviceCtx = nullptr;
-    int64_t                             m_dstChannelLayout=0;
+    AVChannelLayout                     m_dstChannelLayout{ .order = AV_CHANNEL_ORDER_NATIVE, .nb_channels = 1};
     enum AVSampleFormat                 m_dstSampleFmt{};
     struct SwrContext*                  m_audioSwrCtx=nullptr;
 

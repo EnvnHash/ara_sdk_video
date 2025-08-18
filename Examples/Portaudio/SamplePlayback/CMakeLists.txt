@@ -21,11 +21,9 @@ include(Gtk3Include)
 include(UtilitiesDependencies)
 include(CMakeRC)
 include(ResCompInclude)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
-set(TARGET_LIBS ${ARA_SDK_TARGET_LINK_LIBS})
+set(TARGET_LIBS ${ara_sdk_video_LIBRARIES})
 
 list(APPEND TARGET_LIBS GLBase SceneGraph AudioVideo Utilities)
 

@@ -1,45 +1,26 @@
 cmake_minimum_required(VERSION 3.12)
 
-set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
-
-include(GeneralSettings)
-include(VisualStudioSettings)
-
 project(FFmpegEncode)
-
-include_directories(
-	${ARA_AV_SOURCE_DIR}/src
-)
 
 set(SOURCES main.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-include(GLBaseDependencies)
-include(GLBaseCopyDependencies)
-include(Gtk3Include)
-include(PugiXMLInclude)
-include(UtilitiesDependencies)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDepInclude.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputDependencies.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/VideoInputCopyDependencies.cmake)
+include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdk.cmake)
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
-set(TARGET_LIBS ${ARA_SDK_TARGET_LINK_LIBS})
+include_directories(
+	${ara_sdk_INCLUDE_DIRS}
+	${ara_sdk_video_INCLUDE_DIRS}
+)
 
-list(APPEND TARGET_LIBS GLBase SceneGraph AudioVideo Utilities)
+set(TARGET_LIBS ${ara_sdk_video_LIBRARIES} ${ara_sdk_LIBRARIES} GLBase SceneGraph AudioVideo Utilities)
+
 if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
 	list(APPEND TARGET_LIBS resources)
 endif()
 
-if (WIN32)
-	target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS}  Dwmapi.lib)
-else ()
-	target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS} )
-endif()
-
-if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
-	target_link_libraries(${PROJECT_NAME} resources)
-endif()
+target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS})
 
 INSTALL(TARGETS ${PROJECT_NAME}
 		DESTINATION ${CMAKE_CURRENT_BINARY_DIR} COMPONENT ${PROJECT_NAME} OPTIONAL)

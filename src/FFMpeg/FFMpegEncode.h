@@ -78,7 +78,6 @@ protected:
     AVBufferRef*                    m_hw_device_ctx=nullptr;
     AVPixelFormat                   m_hwPixFmt=(AVPixelFormat)0;
     AVPixelFormat                   m_hwSwFmt=(AVPixelFormat)0;
-    AVPacket                        m_decPkt{};
     AVFrame*                        m_encFrame=nullptr;
     AVFrame*                        m_frameBGRA=nullptr;
     AVFilterContext*		        m_buffersink_ctx=nullptr;

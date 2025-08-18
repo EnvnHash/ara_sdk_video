@@ -263,7 +263,7 @@ static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, int width, int height, 
     return picture;
 }
 
-static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, uint64_t channel_layout, int sample_rate, int nb_samples) {
+static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, AVChannelLayout channel_layout, int sample_rate, int nb_samples) {
     auto frame = av_frame_alloc();
     if (!frame) {
         LOGE << "Error allocating an audio frame";
@@ -271,7 +271,8 @@ static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, uint64_t channel
     }
 
     frame->format = sample_fmt;
-    frame->channel_layout = channel_layout;
+    frame->ch_layout = channel_layout;
+    frame->ch_layout = channel_layout;
     frame->sample_rate = sample_rate;
     frame->nb_samples = nb_samples;
 

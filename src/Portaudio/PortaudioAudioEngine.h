@@ -20,9 +20,9 @@ private:
     void addSampleAtPos(Sample& samp);
     int32_t getActFrameBufPos();
 
-    std::chrono::system_clock::time_point   m_paStartTime;
-    std::list<Sample*>                      m_samplePlayQueue;
-    std::list<Sample>                       m_samples;
+    std::chrono::system_clock::time_point   m_paStartTime{};
+    std::list<Sample*>                      m_samplePlayQueue{};
+    std::list<Sample>                       m_samples{};
 };
 
 }
