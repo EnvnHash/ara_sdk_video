@@ -351,9 +351,9 @@ static GLenum getGlColorFormatFromAVPixelFormat(AVPixelFormat srcFmt) {
             {AV_PIX_FMT_YUV420P, GL_RED},
             {AV_PIX_FMT_NV12, GL_RED},
             {AV_PIX_FMT_NV21, GL_RED},
-            {AV_PIX_FMT_RGB24, GL_BGR},
-            {AV_PIX_FMT_BGR24, GL_RGB},
-            {AV_PIX_FMT_BGRA, GL_RGBA},
+            {AV_PIX_FMT_RGB24, GL_RGB},
+            {AV_PIX_FMT_BGR24, GL_BGR},
+            {AV_PIX_FMT_BGRA, GL_BGRA},
     };
     return formatMap[srcFmt];
 }
@@ -364,6 +364,7 @@ static int32_t getNumBytesPerPix(GLenum colorFmt) {
             {GL_BGR, 3},
             {GL_RGB, 3},
             {GL_RGBA, 4},
+            {GL_BGRA, 4},
     };
     return formatMap[colorFmt];
 }

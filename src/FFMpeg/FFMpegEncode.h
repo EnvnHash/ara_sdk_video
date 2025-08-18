@@ -99,7 +99,7 @@ protected:
     int 					    m_ret=0;
     std::array<bool, 2>         m_have{};
     unsigned int			    m_nrBufferFrames = 16;
-    unsigned int 			    m_glNrBytesPerPixel = 3;
+    int32_t 			        m_glNrBytesPerPixel = 3;
     bool					    m_savePngFirstCall = true;
     bool					    m_savePngSeq = false;
     bool					    m_doRec = false;
@@ -125,7 +125,7 @@ protected:
 
     CycleBuffer<ffmpeg::RecFrame> m_videoFrames;
 
-    GLenum 					    m_glDownloadFmt=GL_BGR;
+    GLenum 					    m_glDownloadFmt{};
     CycleBuffer<GLuint>         m_pbos;
     static inline size_t 		m_num_pbos=4;
     std::string				    m_errStr;

@@ -41,7 +41,7 @@ bool FFMpegEncode::init(const EncodePar& par) {
     glGenBuffers(static_cast<GLsizei>(m_num_pbos), m_pbos.getBuffer().data());
     for (auto &it : m_pbos.getBuffer()) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, it);
-        glBufferData(GL_PIXEL_PACK_BUFFER, m_nbytes, NULL, GL_STREAM_READ);
+        glBufferData(GL_PIXEL_PACK_BUFFER, m_nbytes, nullptr, GL_STREAM_READ);
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
@@ -51,7 +51,7 @@ bool FFMpegEncode::init(const EncodePar& par) {
 
 bool FFMpegEncode::record() {
     for (auto& it: m_outStream) {
-        it = {0};
+        it = {nullptr};
     }
 
     m_fileType = std::filesystem::path(m_par.filePath).extension().string();
@@ -198,14 +198,14 @@ bool FFMpegEncode::record() {
                   m_forceCodec.size() > 1 ? m_codec[toType(streamType::video)]->id : m_fmt->video_codec);
         LOG << " using codec: " << m_codec[toType(streamType::video)]->name;
 
-        m_have[toType(streamType::video)] = 1;
+        m_have[toType(streamType::video)] = true;
     } else {
         LOGE << "no video codec found";
     }
 
     if (!m_noAudio && m_fmt->audio_codec != AV_CODEC_ID_NONE) {
         addStream(&m_outStream[toType(streamType::audio)], m_oc, &m_codec[toType(streamType::audio)], m_fmt->audio_codec);
-        m_have[toType(streamType::audio)] = 1;
+        m_have[toType(streamType::audio)] = true;
     } else if(!m_noAudio) {
         LOGE << "no audio codec found";
     }
@@ -308,7 +308,7 @@ void FFMpegEncode::recThread() {
     }
 
     // save rest of audio m_buffer
-    while (m_audioQueue.size() > 0) {
+    while (!m_audioQueue.empty()) {
         writeAudioFrame(m_oc, &m_outStream[toType(streamType::audio)], true);
     }
 
@@ -398,7 +398,7 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc, const AVCod
             LOGE << "Could not allocate stream";
             return;
         }
-        ost->st->id = oc->nb_streams -1;
+        ost->st->id = static_cast<int32_t>(oc->nb_streams) -1;
     }
 
     auto c = avcodec_alloc_context3(*codec);
@@ -591,7 +591,7 @@ void FFMpegEncode::setVideoCodePar(OutputStream *ost, AVCodecContext *c, enum AV
 void FFMpegEncode::openAudio(const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg) {
     AVCodecContext *c;
     int nb_samples;
-    AVDictionary *opt = NULL;
+    AVDictionary *opt = nullptr;
     c = ost->enc;
 
     // open it
@@ -660,13 +660,13 @@ void FFMpegEncode::openAudio(const AVCodec *codec, OutputStream *ost, AVDictiona
 
 AVFrame* FFMpegEncode::getAudioFrame(OutputStream *ost, bool clear) {
     AVFrame *frame = ost->tmp_frame;
-    int16_t *q = (int16_t*)frame->data[0];
+    auto *q = reinterpret_cast<int16_t*>(frame->data[0]);
     int newSize = 0;
 
     if (static_cast<int32_t>(m_audioQueue.size()) >= frame->nb_samples * ost->enc->channels) {
         for (int j=0;j<frame->nb_samples;j++) {
             for (int chanNr = 0; chanNr < ost->enc->channels; chanNr++) {
-                *q++ = static_cast<int>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
+                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
             }
         }
 
@@ -677,7 +677,7 @@ AVFrame* FFMpegEncode::getAudioFrame(OutputStream *ost, bool clear) {
     } else if (clear) {
         for (unsigned int j=0; j<(m_audioQueue.size() / ost->enc->channels); j++) {
             for (int chanNr = 0; chanNr < ost->enc->channels; chanNr++) {
-                *q++ = static_cast<int>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
+                *q++ = static_cast<int16_t>(m_audioQueue[j * ost->enc->channels + chanNr] * 32767);
             }
         }
 
@@ -706,7 +706,7 @@ int FFMpegEncode::writeAudioFrame(AVFormatContext *oc, OutputStream *ost, bool c
     int got_packet=0;
     int dst_nb_samples;
 
-    if (m_audioQueue.size() > 0) {
+    if (!m_audioQueue.empty()) {
         auto pkt = av_packet_alloc();
         frame = getAudioFrame(ost, clear);
         if (frame) {
@@ -1071,26 +1071,6 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
         std::this_thread::sleep_for(std::chrono::microseconds(100)); // skip frame and wait
     }
 
-    // skip frame if queue full
-    /*if (m_videoFrames.isFilled()) {
-        LOGE << "FFMpegEncode::downloadGlFbToVideoFrame(): buffer queue full, skipping frame";
-        if (m_bufOvrCb) {
-            m_lastBufOvrTime = chrono::system_clock::now();
-            m_bufOvr = true;
-            m_bufOvrCb(true);
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(2)); // skip frame and wait
-        return;
-    } else {
-        if (m_bufOvrCb) {
-            m_encElapsedTime = std::chrono::duration<double, std::milli>(chrono::system_clock::now() - m_lastBufOvrTime).count();
-            if (m_bufOvr && m_encElapsedTime > 1000){
-                m_bufOvr = false;
-                m_bufOvrCb(false);
-            }
-        }
-    }*/
-
     bool gotData = false;
     if (!bufPtr) {
         if (m_pbos.getFillAmt() > 0 && !m_videoFrames.isFilled()) {
@@ -1114,7 +1094,7 @@ void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr
         // write pbo with actual data
         if (!m_pbos.isFilled()) {
             glBindBuffer(GL_PIXEL_PACK_BUFFER, m_pbos.getWriteBuff());
-            glReadPixels(0, 0, m_par.width, m_par.height, m_glDownloadFmt, GL_UNSIGNED_BYTE, 0);
+            glReadPixels(0, 0, m_par.width, m_par.height, m_glDownloadFmt, GL_UNSIGNED_BYTE, nullptr);
             m_pbos.feedCountUp();
         }
         glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
@@ -1151,7 +1131,7 @@ void FFMpegEncode::savePngSeq() {
             while (m_doRec){
                 if (m_saveQueueSize > 0){
                     m_saveQueue[m_saveQueueRead]();
-                    ++m_saveQueueRead %= m_saveQueue.size();
+                    ++m_saveQueueRead %= static_cast<int32_t>(m_saveQueue.size());
                     m_saveQueueSize--;
                 } else {
                     this_thread::sleep_for(400us);
@@ -1182,7 +1162,7 @@ void FFMpegEncode::savePngSeq() {
                                        bPtr);
         };
 
-        ++m_saveQueueWrite %= m_saveQueue.size();
+        ++m_saveQueueWrite %= static_cast<int32_t>(m_saveQueue.size());
         m_saveQueueSize++;
         if (m_saveQueueSize >= m_saveQueue.size()) {
             LOGE << " save Queue Overflow!";
