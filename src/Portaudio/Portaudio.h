@@ -87,7 +87,7 @@ public :
 
 protected:
     int                     m_sampleRate=44100;
-    int                     m_framesPerBuffer=256;
+    int                     m_framesPerBuffer=128;
     int                     m_numChannels=0;
     bool                    m_isPlaying = false;
     bool                    m_useCycleBuf = true;

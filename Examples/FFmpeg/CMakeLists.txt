@@ -13,6 +13,9 @@ if(NOT ANDROID)
         add_subdirectory(FFmpegCameraInput)
         add_dependencies(FFmpegCameraInput Utilities GLBase SceneGraph AudioVideo)
 
+        add_subdirectory(FFmpegMp3Player)
+        add_dependencies(FFmpegMp3Player Utilities GLBase SceneGraph AudioVideo)
+
         add_subdirectory(FFmpegTest)
         add_dependencies(FFmpegTest Utilities GLBase SceneGraph AudioVideo)
 

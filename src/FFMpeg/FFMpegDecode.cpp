@@ -98,7 +98,8 @@ void FFMpegDecode::singleThreadDecodeLoop() {
                 if (decodeVideoPacket(m_packet, m_videoCodecCtx) < 0) {
                     continue;
                 }
-            } else if (m_packet->stream_index == m_streamIndex[toType(streamType::audio)] && decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
+            } else if (m_packet->stream_index == m_streamIndex[toType(streamType::audio)]
+                       && decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
                 continue;
             }
 
@@ -600,7 +601,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
         } else if (response == AVERROR_EOF) {
             LOGE << "end of file";
         } else if (response < 0) {
-            LOGE << "Error while receiving a m_frame from the player " << err2str(response);
+            LOGE << "Error while receiving a frame from the player " << err2str(response);
             return response;
         }
 

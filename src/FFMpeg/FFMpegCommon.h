@@ -68,6 +68,9 @@ static std::string av_make_error_string(int errnum) {
 
 namespace ara {
     class GLBase;
+    namespace av {
+        class PortaudioAudioEngine;
+    };
 }
 
 namespace ara::av::ffmpeg {
@@ -91,16 +94,17 @@ struct RecFrame {
 };
 
 struct DecodePar {
-    GLBase*     glbase = nullptr;
-    std::string filePath;
-    int         useNrThreads = 1;
-    int         destWidth = 0;
-    int         destHeight = 0;
-    bool        loop = true;
-    bool        useHwAccel = true;
-    bool        decodeYuv420OnGpu = true;
-    bool        startDecodeThread = false;
-    std::string assetName;
+    GLBase*                 glbase = nullptr;
+    PortaudioAudioEngine*   portaudioEngine = nullptr;
+    std::string             filePath;
+    int                     useNrThreads = 1;
+    int                     destWidth = 0;
+    int                     destHeight = 0;
+    bool                    loop = true;
+    bool                    useHwAccel = true;
+    bool                    decodeYuv420OnGpu = true;
+    bool                    startDecodeThread = false;
+    std::string             assetName;
 
     std::function<void()> initCb;
     std::function<void()> endCb;

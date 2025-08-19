@@ -23,8 +23,8 @@ public:
     void shaderBegin();
     void loadFrameToTexture(double time, bool monotonic=false);
 
-    int32_t     getAudioWriteBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getWritePos() : 0; }
-    int32_t     getAudioReadBufIdx() { return m_paudio.useCycleBuf() ? m_paudio.getCycleBuffer().getReadPos() : 0; }
+    int32_t     getAudioWriteBufIdx() { return m_paudio->useCycleBuf() ? m_paudio->getCycleBuffer().getWritePos() : 0; }
+    int32_t     getAudioReadBufIdx() { return m_paudio->useCycleBuf() ? m_paudio->getCycleBuffer().getReadPos() : 0; }
     Shaders*    getShader() { return m_shader; }
     GLuint      getTex() {  if (!m_textures.empty() && m_textures[0].isAllocated()) return m_textures[0].getId(); else return 0; }
     GLuint      getTexU() { if (m_textures.size() > 1 && m_textures[1].isAllocated()) return m_textures[1].getId(); else return 0; }
@@ -53,7 +53,8 @@ private:
 
     std::vector<Texture>& getTextures() { return m_textures; }
 
-    Portaudio               m_paudio;
+    Portaudio*              m_paudio = nullptr;
+    Portaudio               m_paudioIntern;
     uint32_t                m_cycBufSize = 160; // queue size in nr of PortAudio Frames, must be more or less equal to video queue in length
     size_t                  m_bufSizeFact{};
     ShaderCollector*		m_shCol=nullptr;
