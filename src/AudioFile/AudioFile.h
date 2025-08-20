@@ -51,16 +51,18 @@ _Pragma("GCC diagnostic ignored \"-Wshadow\"")
 
 #include "AVCommon.h"
 #include "AudioFile/AudioSampleRateConverter.h"
+#include "CycleBuffer.h"
 
 namespace ara::av {
 
 /** The different types of audio file, plus some other types to indicate a failure to load a file, or that one hasn't
 * been loaded yet */
-enum class AudioFileFormat : int32_t { Error = 0, NotLoaded, Wave, Aiff };
+enum class AudioFileFormat : int32_t { Error = 0, NotLoaded, Wave, Aiff, FFMpeg };
 enum WavAudioFormat { PCM = 0x0001, IEEEFloat = 0x0003, ALaw = 0x0006, MULaw = 0x0007, Extensible = 0xFFFE };
 enum AIFFAudioFormat { Uncompressed = 0, Compressed, Error };
 enum class Endianness : int32_t { LittleEndian = 0, BigEndian };
 enum class SampleOrder : int32_t { Packed = 0, Interleaved };
+
 struct SampleParseData {
     int32_t sampleIndex=0;
     int32_t channel=0;
@@ -68,17 +70,25 @@ struct SampleParseData {
     const std::vector<uint8_t>& fileData;
 };
 
+class Portaudio;
+
+struct AudioFileLoadPar {
+    const std::filesystem::path& filePath;
+    SampleOrder order=SampleOrder::Packed;
+    Portaudio* portaudio=nullptr;
+};
+
 class AudioFile {
 public:
-    AudioFile();
+    AudioFile() = default;
     virtual ~AudioFile() = default;
 
     /** Constructor, using a given file path to load a file */
-    explicit AudioFile(const std::string &filePath, SampleOrder order=SampleOrder::Packed) { load (filePath, order); }
+    explicit AudioFile(const AudioFileLoadPar& p) { AudioFile::load(p); }
 
     /** Loads an audio file from a given file path.
      * @Returns true if the file was successfully loaded */
-    bool load(const std::string &filePath, SampleOrder order=SampleOrder::Packed);
+    virtual bool load(const AudioFileLoadPar& p);
 
     /** Loads an audio file from data in memory */
     bool loadFromMemory(const std::vector<uint8_t> &fileData, AudioFileFormat aff);
@@ -115,8 +125,11 @@ public:
         return m_sampleOrder == SampleOrder::Packed ? m_samples[channel][sampleIdx] : m_samples[0][sampleIdx * m_numChannels + channel];
     }
 
-    const std::deque<std::deque<float>>& getSamplesPacked() { return m_samples; }
-    const std::deque<float>& getSamplesInterleaved() { return m_samples[0]; }
+    const auto& getSamplesPacked() { return m_samples; }
+    const auto& getSamplesInterleaved() { return m_samples[0]; }
+    auto getType() { return m_audioFileFormat; }
+    [[nodiscard]] int32_t getReadOffset() const { return m_readOffset; }
+    [[nodiscard]] auto getSampleOrder() const { return m_sampleOrder; }
 
     /** Prints a summary of the audio file to the console */
     void printSummary() const;
@@ -148,17 +161,21 @@ public:
     /** Sets whether the library should log error messages to the console. By default this is true */
     void shouldLogErrorsToConsole(bool logErrors) { m_logErrorsToConsole = logErrors; }
 
-    bool isLoaded() { return m_loaded; }
+    [[nodiscard]] bool isLoaded() const { return m_loaded; }
+
+    virtual void advance(int32_t frames) {}
+    virtual CycleBuffer<std::vector<float>>* getCycleBuffer() { return nullptr; }
+    virtual bool usingCycleBuf() { return false; }
 
 protected:
   //  virtual bool encodeFile(std::vector<uint8_t> &fileData) = 0;
 
     void clearAudioBuffer();
 
-    float parse8BitSample(const SampleParseData& sd);
-    float parse16BitSample(const SampleParseData& sd);
-    float parse24BitSample(const SampleParseData& sd);
-    float parse32BitSample(const SampleParseData& sd);
+    static float parse8BitSample(const SampleParseData& sd);
+    static float parse16BitSample(const SampleParseData& sd);
+    static float parse24BitSample(const SampleParseData& sd);
+    float parse32BitSample(const SampleParseData& sd) const;
 
     static AudioFileFormat determineAudioFileFormat(const std::vector<uint8_t> &fileData);
 
@@ -187,14 +204,16 @@ protected:
     bool                m_logErrorsToConsole{true};
     bool                m_loaded{false};
 
-    int32_t     m_numBytesPerSample = 0;
-    int32_t     m_numSamplesPerChannel = 0;
-    int32_t     m_dataChunkSize = 0;
-    int32_t     m_indexOfFormatChunk = 0;
-    int32_t     m_indexOfSoundDataChunk = 0;
-    int32_t     m_indexOfDataChunk = 0;
-    int32_t     m_indexOfXMLChunk = 0;
-    std::string m_iXMLChunk;
+    int32_t         m_readOffset = 0;
+    int32_t         m_numBytesPerSample = 0;
+    int32_t         m_numSamplesPerChannel = 0;
+    int32_t         m_dataChunkSize = 0;
+    int32_t         m_indexOfFormatChunk = 0;
+    int32_t         m_indexOfSoundDataChunk = 0;
+    int32_t         m_indexOfDataChunk = 0;
+    int32_t         m_indexOfXMLChunk = 0;
+    std::string     m_iXMLChunk;
+    AudioFileFormat m_audioFileFormat{};
 };
 
 }

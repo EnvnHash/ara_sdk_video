@@ -27,6 +27,7 @@ struct PaInitPar {
     int32_t sampleRate = 0;
     int32_t numChannels = 0;
     int32_t allocateBuffers = 0;
+    int32_t framesPerBuffer = 0;
     bool useCycleBuffer = true;
 };
 
@@ -39,7 +40,7 @@ public :
 
     Portaudio() = default;
 
-    virtual bool init(const PaInitPar& = PaInitPar());
+    virtual bool init(const PaInitPar&);
     virtual void start();
     virtual void stop();
     virtual void pause();
@@ -64,13 +65,13 @@ public :
         LOGE << "Error message: " << Pa_GetErrorText(err);
     }
 
-    void printInfo();
+    void printInfo() const;
 
     [[nodiscard]] bool isRunning() const         { return m_isPlaying; }
     [[nodiscard]] int getFramesPerBuffer() const { return m_framesPerBuffer; }
     [[nodiscard]] int getNrOutChannels() const   { return m_outputParameters.channelCount; }
-    int32_t getSampleRate()                      { return m_sampleRate; }
-    auto& getCycleBuffer()     { return m_cycleBuffer; }
+    [[nodiscard]] int32_t getSampleRate() const  { return m_sampleRate; }
+    auto& getCycleBuffer()      { return m_cycleBuffer; }
     auto& getStreamMtx()              { return m_streamMtx; }
     auto& getStreamProcCb()      { return m_streamProcCb; }
     auto& useCycleBuf()                 { return m_useCycleBuf; }

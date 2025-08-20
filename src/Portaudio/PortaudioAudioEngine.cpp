@@ -12,52 +12,53 @@ bool PortaudioAudioEngine::init(const PaInitPar& pa) {
     auto r = Portaudio::init(pa);
     m_paStartTime = chrono::system_clock::now();
     m_streamProcCb = [this](const void*, void*, uint64_t) {
-       procSampleQueue();
+        procSampleQueue();
     };
     return r;
 }
 
-Sample& PortaudioAudioEngine::loadSample(const std::filesystem::path& p) {
-    m_samples.emplace_back(Sample(p));
-    return m_samples.back();
+PaAudioFile& PortaudioAudioEngine::loadAudioFile(const filesystem::path& p) {
+    m_audioFiles.emplace_back(AudioFileLoadPar{
+        .filePath = p,
+        .portaudio = this
+    });
+    return m_audioFiles.back();
 }
 
-void PortaudioAudioEngine::play(Sample& samp) {
+void PortaudioAudioEngine::play(PaAudioFile& samp) {
     if (m_cycleBuffer.empty()) {
         LOGE << "Portaudio::play Error: cycleBuffer empty, can't add sample";
         return;
     }
-
     m_samplePlayQueue.emplace_back(&samp);
 }
 
 void PortaudioAudioEngine::procSampleQueue() {
     bool countUp = false;
-    std::ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
-    for (auto samp : m_samplePlayQueue) {
-        if (samp->getBuffer() && (samp->getPlayPos() < samp->getBuffer()->size() || samp->isLooping())) {
-            addSampleAtPos(*samp);
+    ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
+    for (auto af : m_samplePlayQueue) {
+        if (af->usingCycleBuf() || (af->getBuffer() && (af->getPlayPos() < af->getBuffer()->size() || af->isLooping()))) {
+            addAudioFileAtPos(*af);
             countUp = true;
         }
     }
 
     if (countUp) {
-        unique_lock<mutex> l(m_streamMtx);
         m_cycleBuffer.feedCountUp();
     }
 }
 
-void PortaudioAudioEngine::addSampleAtPos(Sample& samp) {
+void PortaudioAudioEngine::addAudioFileAtPos(PaAudioFile& af) {
     auto outBufPtr = m_cycleBuffer.getWriteBuff().begin();
-    auto framesToWrite = std::min(m_framesPerBuffer, static_cast<int32_t>(samp.getBuffer()->size() - samp.getPlayPos()) / samp.getNumChannels());
+    auto framesToWrite = af.usingCycleBuf() ? m_framesPerBuffer : std::min(m_framesPerBuffer, static_cast<int32_t>(af.getBuffer()->size() - af.getPlayPos()) / af.getNumChannels());
 
     for (auto frame = 0; frame < framesToWrite; ++frame) {
         for (auto chan=0; chan < m_numChannels; ++chan, ++outBufPtr) {
-            *outBufPtr += samp.consume(frame, chan, m_sampleRate);
+            *outBufPtr += af.consume(frame, chan, m_sampleRate);
         }
     }
 
-    samp.advancePlayHead(framesToWrite, m_sampleRate);
+    af.advance(framesToWrite, m_sampleRate);
 }
 
 int32_t PortaudioAudioEngine::getActFrameBufPos() {

@@ -17,11 +17,11 @@ int main(int argc, char** argv) {
         .allocateBuffers = 3
     });
 
-    auto& sine = pa.loadSample("sine.wav");
+    auto& sine = pa.loadAudioFile("sine.wav");
     sine.setLooping(true);
     sine.printInfo();
 
-    auto& sample = pa.loadSample("stereol.wav");
+    auto& sample = pa.loadAudioFile("stereol.wav");
     sample.printInfo();
 
     pa.start();

@@ -53,6 +53,10 @@ bool Portaudio::init(const PaInitPar& p) {
         LOG << "Portaudio using default output device: " << outDevInfo->name;
     }
 
+    if (p.framesPerBuffer) {
+        m_framesPerBuffer = p.framesPerBuffer;
+    }
+
     return true;
 }
 
@@ -184,8 +188,9 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
 
     // if cycle m_buffer not filled, set samples to zero and init
     if (ctx->useCycleBuf() && !ctx->m_cycleBuffer.empty() && ctx->getCycleBuffer().getFillAmt() != 0) {
-        auto readBuf = ctx->getCycleBuffer().consume();
-        memcpy(out, readBuf->data(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+        auto& readBuf = ctx->getCycleBuffer().getReadBuff();
+        memcpy(out, readBuf.data(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+        ctx->getCycleBuffer().consumeCountUp();
     } else {
         memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
     }
@@ -197,7 +202,7 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
     return 0;
 }
 
-void Portaudio::printInfo() {
+void Portaudio::printInfo() const {
     LOG << "------------------------------------------------------";
     LOG << "Number of channels: " << m_outputParameters.channelCount;
     LOG << "SampleRate: " << m_sampleRate;

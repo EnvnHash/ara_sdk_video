@@ -78,6 +78,9 @@ struct AiffUtilities {
 };
 
 class AudioFileAiff : public AudioFile {
+public:
+    AudioFileAiff();
+
 protected:
     bool decodeFile(const std::vector<uint8_t>& fileData) override;
     bool procFormatChunk(const std::vector<uint8_t>& fileData) override;

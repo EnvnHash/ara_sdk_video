@@ -5,24 +5,24 @@
 #pragma once
 
 #include <Portaudio/Portaudio.h>
-#include <AudioFile/Sample.h>
+#include <AudioFile/PaAudioFile.h>
 
 namespace ara::av {
 
 class PortaudioAudioEngine : public Portaudio {
 public:
-    bool init(const PaInitPar& = PaInitPar()) override;
-    void play(Sample& samp);
+    bool init(const PaInitPar&) override;
+    void play(PaAudioFile& samp);
     void procSampleQueue();
-    Sample& loadSample(const std::filesystem::path& p);
+    PaAudioFile& loadAudioFile(const std::filesystem::path& p);
 
 private:
-    void addSampleAtPos(Sample& samp);
+    void addAudioFileAtPos(PaAudioFile& af);
     int32_t getActFrameBufPos();
 
     std::chrono::system_clock::time_point   m_paStartTime{};
-    std::list<Sample*>                      m_samplePlayQueue{};
-    std::list<Sample>                       m_samples{};
+    std::list<PaAudioFile*>                 m_samplePlayQueue{};
+    std::list<PaAudioFile>                  m_audioFiles{};
 };
 
 }

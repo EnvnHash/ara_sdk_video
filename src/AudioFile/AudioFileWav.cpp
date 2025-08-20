@@ -6,6 +6,12 @@
 
 namespace ara::av {
 
+AudioFileWav::AudioFileWav() {
+    m_audioFileFormat = AudioFileFormat::Wave;
+    m_samples.resize(1);
+    m_samples[0].resize(0);
+}
+
 bool AudioFileWav::decodeFile(const std::vector<uint8_t>& fileData) {
     m_numSamplesPerChannel = m_dataChunkSize / (m_numChannels * m_numBytesPerSample);
     int samplesStartIndex = m_indexOfDataChunk + 8;
@@ -115,13 +121,13 @@ bool AudioFileWav::encodeFile(std::vector<uint8_t>& fileData) {
     for (int i = 0; i < getNumSamplesPerChannel(); i++) {
         for (int channel = 0; channel < getNumChannels(); channel++) {
             if (m_bitDepth == 8) {
-                uint8_t byte = AudioSampleConverter<float>::sampleToUnsignedByte (m_samples[channel][i]);
+                uint8_t byte = AudioSampleConverter<float>::sampleToUnsignedByte(m_samples[channel][i]);
                 fileData.emplace_back(byte);
             } else if (m_bitDepth == 16) {
-                int16_t sampleAsInt = AudioSampleConverter<float>::sampleToSixteenBitInt (m_samples[channel][i]);
+                int16_t sampleAsInt = AudioSampleConverter<float>::sampleToSixteenBitInt(m_samples[channel][i]);
                 addInt16ToFileData (fileData, sampleAsInt);
             } else if (m_bitDepth == 24) {
-                int32_t sampleAsIntAgain = AudioSampleConverter<float>::sampleToTwentyFourBitInt (m_samples[channel][i]);
+                int32_t sampleAsIntAgain = AudioSampleConverter<float>::sampleToTwentyFourBitInt(m_samples[channel][i]);
 
                 uint8_t bytes[3];
                 bytes[2] = static_cast<uint8_t>((sampleAsIntAgain >> 16) & 0xFF);
@@ -136,7 +142,7 @@ bool AudioFileWav::encodeFile(std::vector<uint8_t>& fileData) {
                 if (audioFormat == WavAudioFormat::IEEEFloat) {
                     sampleAsInt = reinterpret_cast<int32_t&>(m_samples[channel][i]);
                 } else { // assume PCM
-                    sampleAsInt = AudioSampleConverter<float>::sampleToThirtyTwoBitInt (m_samples[channel][i]);
+                    sampleAsInt = AudioSampleConverter<float>::sampleToThirtyTwoBitInt(m_samples[channel][i]);
                 }
                 addInt32ToFileData(fileData, sampleAsInt, Endianness::LittleEndian);
             } else {

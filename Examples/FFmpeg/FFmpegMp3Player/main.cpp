@@ -5,34 +5,30 @@
  *      Author: sven
  */
 
-
-#include "FFMpeg/FFMpegPlayer.h"
 #include "Portaudio/PortaudioAudioEngine.h"
 
 using namespace std;
 using namespace ara;
 using namespace ara::av;
 
-FFMpegPlayer        player;
 PortaudioAudioEngine pa;
 
-int main(int argc, char** argv) {
-    bool run = true;
+int main(int, char**) {
+    Conditional running;
     pa.init({
         .sampleRate = 44100,
         .numChannels = 2,
-        .allocateBuffers = 18
+        .allocateBuffers = 3,
+        .framesPerBuffer = 128
     });
 
-    player.openFile({
-        .portaudioEngine = &pa,
-        .filePath = "main_menu_2.mp3"
-    });
-    player.start(0.0);
+    auto& af = pa.loadAudioFile("main_menu_2.mp3");
+    af.setLooping(true);
 
-    while (run) {
-        std::this_thread::sleep_for(500ms);
-    }
+    pa.start();
+    pa.play(af);
+    running.wait(20000); // play for 5 sec
+    pa.stop();
 
     LOG << "bombich";
 }

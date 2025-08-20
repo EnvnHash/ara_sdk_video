@@ -95,7 +95,6 @@ struct RecFrame {
 
 struct DecodePar {
     GLBase*                 glbase = nullptr;
-    PortaudioAudioEngine*   portaudioEngine = nullptr;
     std::string             filePath;
     int                     useNrThreads = 1;
     int                     destWidth = 0;

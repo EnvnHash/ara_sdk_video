@@ -9,6 +9,9 @@
 namespace ara::av {
 
 class AudioFileWav : public AudioFile {
+public:
+    AudioFileWav();
+
 protected:
     bool decodeFile (const std::vector<uint8_t>& fileData) override;
     bool procFormatChunk(const std::vector<uint8_t>& fileData) override;

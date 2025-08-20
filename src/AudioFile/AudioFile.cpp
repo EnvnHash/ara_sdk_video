@@ -7,11 +7,6 @@
 
 namespace ara::av {
 
-AudioFile::AudioFile() {
-    m_samples.resize(1);
-    m_samples[0].resize(0);
-}
-
 void AudioFile::printSummary() const {
     LOG << "|======================================|";
     LOG << "Sample Info: ";
@@ -25,7 +20,6 @@ void AudioFile::printSummary() const {
 
 bool AudioFile::setAudioBuffer(const std::deque<std::deque<float>>& newBuffer) {
     int numChannels = static_cast<int>(newBuffer.size());
-
     if (numChannels <= 0) {
         assert (false && "The buffer you are trying to use has no channels");
     }
@@ -50,7 +44,7 @@ void AudioFile::setNumSamplesPerChannel(int numSamples) {
         m_samples[i].resize(numSamples);
         // set any new samples to zero
         if (numSamples > originalSize) {
-            std::fill (m_samples[i].begin() + originalSize, m_samples[i].end(), 0.f);
+            std::fill(m_samples[i].begin() + originalSize, m_samples[i].end(), 0.f);
         }
     }
 }
@@ -64,17 +58,17 @@ void AudioFile::setNumChannels(int numChannels) {
     if (numChannels > originalNumChannels) {
         for (int i = originalNumChannels; i < numChannels; i++) {
             m_samples[i].resize(originalNumSamplesPerChannel);
-            std::fill (m_samples[i].begin(), m_samples[i].end(), 0.f);
+            std::fill(m_samples[i].begin(), m_samples[i].end(), 0.f);
         }
     }
 }
 
-bool AudioFile::load(const std::string& filePath, SampleOrder order) {
-    std::ifstream file(filePath, std::ios::binary);
+bool AudioFile::load(const AudioFileLoadPar& p) {
+    std::ifstream file(p.filePath, std::ios::binary);
 
     // check the file exists
     if (!file.good()) {
-        reportError("ERROR: File doesn't exist or otherwise can't load file\n"  + filePath);
+        reportError("ERROR: File doesn't exist or otherwise can't load file\n"  + p.filePath.string());
         return false;
     }
 
@@ -90,16 +84,16 @@ bool AudioFile::load(const std::string& filePath, SampleOrder order) {
     file.close();
 
     if (file.gcount() != length) {
-        reportError ("ERROR: Couldn't read entire file\n" + filePath);
+        reportError ("ERROR: Couldn't read entire file\n" + p.filePath.string());
         return false;
     }
 
     // Handle very small files that will break our attempt to read the first header info from them
     if (fileData.size() < 12) {
-        reportError ("ERROR: File is not a valid audio file\n" + filePath);
+        reportError ("ERROR: File is not a valid audio file\n" + p.filePath.string());
         return false;
     } else {
-        m_sampleOrder = order;
+        m_sampleOrder = p.order;
         auto audioFileFormat = determineAudioFileFormat(fileData);
         return loadFromMemory(fileData, audioFileFormat);
     }
@@ -224,7 +218,7 @@ float AudioFile::parse24BitSample(const SampleParseData& sd) {
     return AudioSampleConverter<float>::twentyFourBitIntToSample(sampleAsInt);
 }
 
-float AudioFile::parse32BitSample(const SampleParseData& sd) {
+float AudioFile::parse32BitSample(const SampleParseData& sd) const {
     int32_t sampleAsInt = sd.aff == AudioFileFormat::Aiff ? fourBytesToInt(sd.fileData, sd.sampleIndex, Endianness::BigEndian)
                                                           : fourBytesToInt (sd.fileData, sd.sampleIndex);
     float sample;

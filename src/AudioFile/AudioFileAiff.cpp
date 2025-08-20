@@ -6,6 +6,12 @@
 
 namespace ara::av {
 
+AudioFileAiff::AudioFileAiff() {
+    m_audioFileFormat = AudioFileFormat::Aiff;
+    m_samples.resize(1);
+    m_samples[0].resize(0);
+}
+
 bool AudioFileAiff::decodeFile(const std::vector<uint8_t>& fileData) {
     auto offset = fourBytesToInt(fileData, m_indexOfDataChunk + 8, Endianness::BigEndian);
     auto m_numBytesPerBlock = m_numBytesPerSample * m_numChannels;

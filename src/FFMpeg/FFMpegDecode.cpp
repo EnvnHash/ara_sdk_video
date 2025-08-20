@@ -640,25 +640,22 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
                     break;
                 }
 
+                m_audioCbData.buffer = m_dstSampleBuffer;
                 m_audioCbData.nChannels = m_dstAudioNumChannels;
                 m_audioCbData.samples = m_dstNumSamples;
                 m_audioCbData.byteSize = m_dstAudioLineSize;
-                m_audioCbData.buffer = m_dstSampleBuffer;
                 m_audioCbData.sampleRate = m_dstSampleRate;
                 m_audioCbData.sampleFmt = m_dstSampleFmt;
-                m_audioCbData.ptss = m_timeBaseDiv[toType(streamType::audio)] * static_cast<double>(m_audioFrame->pts);
             } else {
-                if (!m_dstSampleBuffer) {
-                    // buffer is going to be directly written to a raw audio, no alignment
-                    response = av_samples_alloc_array_and_samples((uint8_t***)&m_dstSampleBuffer, &m_audioFrame->linesize[0],
-                                                                  m_audioFrame->ch_layout.nb_channels, m_audioFrame->nb_samples,
-                                                                  static_cast<AVSampleFormat>(m_audioFrame->format), 0);
-                    if (response < 0) {
-                        LOGE << "FFmpegDecode: Error allocation audio buffer";
-                        break;
-                    }
-                }
+                m_audioCbData.buffer = m_audioFrame->data;
+                m_audioCbData.nChannels = m_audioFrame->ch_layout.nb_channels;
+                m_audioCbData.samples = m_audioFrame->nb_samples;
+                m_audioCbData.byteSize = m_audioFrame->linesize[0];
+                m_audioCbData.sampleRate = m_audioFrame->sample_rate;
+                m_audioCbData.sampleFmt = m_audioFrame->format;
             }
+
+            m_audioCbData.ptss = m_timeBaseDiv[toType(streamType::audio)] * static_cast<double>(m_audioFrame->pts);
 
             if (m_audioCb) {
                 m_audioCb(m_audioCbData);
