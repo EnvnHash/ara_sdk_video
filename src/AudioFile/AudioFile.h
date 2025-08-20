@@ -73,7 +73,8 @@ struct SampleParseData {
 class Portaudio;
 
 struct AudioFileLoadPar {
-    const std::filesystem::path& filePath;
+    const std::filesystem::path& filePath{};
+    bool isAsset = false;
     SampleOrder order=SampleOrder::Packed;
     Portaudio* portaudio=nullptr;
 };
@@ -89,6 +90,8 @@ public:
     /** Loads an audio file from a given file path.
      * @Returns true if the file was successfully loaded */
     virtual bool load(const AudioFileLoadPar& p);
+
+    bool loadFromFile(const AudioFileLoadPar& p);
 
     /** Loads an audio file from data in memory */
     bool loadFromMemory(const std::vector<uint8_t> &fileData, AudioFileFormat aff);

@@ -7,7 +7,8 @@
 
 #ifdef ARA_USE_FFMPEG
 
-#include "FFMpegDecode.h"
+#include "FFMpeg/FFMpegDecode.h"
+#include "FFMpeg/FFMpegCustomIOContext.h"
 
 using namespace ara;
 using namespace ara::av::ffmpeg;
@@ -197,9 +198,18 @@ void FFMpegDecode::setDefaultHwDevice() {
 
 bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, DecodePar& p) {
     int err=0;
-    if ((err = avformat_open_input(&m_formatContext, !p.filePath.empty() ? p.filePath.c_str() : nullptr, format, options)) != 0) {
+    auto path = !p.filePath.empty() ? p.isAsset ? "" : p.filePath.c_str() : nullptr;
+
+    if (p.isAsset) {
+        m_ioCtx.load(p.filePath);
+        m_formatContext = avformat_alloc_context();
+        m_ioCtx.initAVFormatContext(m_formatContext);
+    }
+
+    if (avformat_open_input(&m_formatContext, path, nullptr, nullptr) != 0) {
         throw runtime_error("ERROR could not open the file "+p.filePath+" "+err2str(err));
     }
+
     if (m_scanAllPmtsSet) {
         av_dict_set(&m_formatOpts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE);
     }

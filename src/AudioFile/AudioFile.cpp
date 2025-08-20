@@ -3,7 +3,7 @@
 //
 
 #include "AudioFile/AudioFile.h"
-#include "AudioFile/AudioSampleRateConverter.h"
+#include "AssetLoader.h"
 
 namespace ara::av {
 
@@ -64,6 +64,18 @@ void AudioFile::setNumChannels(int numChannels) {
 }
 
 bool AudioFile::load(const AudioFileLoadPar& p) {
+    if (!p.isAsset) {
+        return loadFromFile(p);
+    } else {
+        std::vector<uint8_t> fileData;
+        AssetLoader::loadAssetToMem(fileData, p.filePath);
+        m_sampleOrder = p.order;
+        auto audioFileFormat = determineAudioFileFormat(fileData);
+        return loadFromMemory(fileData, audioFileFormat);
+    }
+}
+
+bool AudioFile::loadFromFile(const AudioFileLoadPar& p) {
     std::ifstream file(p.filePath, std::ios::binary);
 
     // check the file exists

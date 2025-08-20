@@ -17,6 +17,15 @@ bool PortaudioAudioEngine::init(const PaInitPar& pa) {
     return r;
 }
 
+PaAudioFile& PortaudioAudioEngine::loadAudioAsset(const filesystem::path& p) {
+    m_audioFiles.emplace_back(AudioFileLoadPar{
+        .filePath = p,
+        .isAsset = true,
+        .portaudio = this
+    });
+    return m_audioFiles.back();
+}
+
 PaAudioFile& PortaudioAudioEngine::loadAudioFile(const filesystem::path& p) {
     m_audioFiles.emplace_back(AudioFileLoadPar{
         .filePath = p,

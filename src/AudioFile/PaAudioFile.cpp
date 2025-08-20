@@ -15,7 +15,7 @@ PaAudioFile::PaAudioFile(const AudioFileLoadPar& p) {
 
 void PaAudioFile::load(const AudioFileLoadPar& p) {
     try {
-        if (filesystem::exists(p.filePath)) {
+        if (filesystem::exists(p.filePath) || p.isAsset) {
             if (p.filePath.extension() == ".wav") {
                 m_audioFile = make_unique<AudioFileWav>();
             } else if (p.filePath.extension() == ".aif"){

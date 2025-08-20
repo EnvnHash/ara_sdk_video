@@ -15,7 +15,7 @@ public:
     void play(PaAudioFile& samp);
     void procSampleQueue();
     PaAudioFile& loadAudioFile(const std::filesystem::path& p);
-
+    PaAudioFile& loadAudioAsset(const std::filesystem::path& p);
 private:
     void addAudioFileAtPos(PaAudioFile& af);
     int32_t getActFrameBufPos();

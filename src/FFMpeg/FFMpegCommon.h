@@ -99,6 +99,7 @@ struct DecodePar {
     int                     useNrThreads = 1;
     int                     destWidth = 0;
     int                     destHeight = 0;
+    bool                    isAsset = false;
     bool                    loop = true;
     bool                    useHwAccel = true;
     bool                    decodeYuv420OnGpu = true;
