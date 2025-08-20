@@ -39,6 +39,7 @@ void PortaudioAudioEngine::play(PaAudioFile& samp) {
         LOGE << "Portaudio::play Error: cycleBuffer empty, can't add sample";
         return;
     }
+    samp.reset();
     samp.setPlaying(true);
     m_samplePlayQueue.emplace_back(&samp);
 }
@@ -51,6 +52,10 @@ void PortaudioAudioEngine::stop(PaAudioFile& samp) {
 
 void PortaudioAudioEngine::procSampleQueue() {
     unique_lock<mutex> l(m_queueMtx);
+
+    // remove ended samples
+    erase_if(m_samplePlayQueue, [](auto af) { return af->reachedEnd(); });
+
     bool countUp = false;
     ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
     for (auto af : m_samplePlayQueue) {
