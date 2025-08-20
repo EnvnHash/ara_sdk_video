@@ -24,7 +24,7 @@ void CustomIOContext::load(const std::string &s) {
         0,                              // write flag (1=true, 0=false)
         reinterpret_cast<void*>(this),  // user data, will be passed to our callback functions
         CustomIOContext::IOReadFunc,
-        0,                              // no writing
+        nullptr,                        // no writing
         CustomIOContext::IOSeekFunc
     );
 }
@@ -35,7 +35,6 @@ void CustomIOContext::initAVFormatContext(AVFormatContext *pCtx) {
 
     // or read some of the file and let ffmpeg do the guessing
     std::copy(m_bufPtr, m_bufPtr + m_ioBufferSize, m_ioBuffer);
-    std::advance(m_bufPtr, m_ioBufferSize);
 
     AVProbeData probeData;
     probeData.buf = m_ioBuffer;
@@ -49,7 +48,7 @@ int CustomIOContext::IOReadFunc(void *data, uint8_t *buf, int buf_size) {
 
     auto numToRead = std::min(hctx->m_ioBufferSize, static_cast<int32_t>(std::distance(hctx->m_bufPtr, hctx->m_buf.end())));
     std::copy(hctx->m_bufPtr, hctx->m_bufPtr + numToRead, hctx->m_ioBuffer);
-    std::advance(hctx->m_bufPtr, hctx->m_ioBufferSize);
+    std::advance(hctx->m_bufPtr, numToRead);
 
     return numToRead;
 }
@@ -58,7 +57,7 @@ int CustomIOContext::IOReadFunc(void *data, uint8_t *buf, int buf_size) {
 int64_t CustomIOContext::IOSeekFunc(void *data, int64_t pos, int whence) {
     auto hctx = reinterpret_cast<CustomIOContext*>(data);
     if (whence == AVSEEK_SIZE) {
-        return hctx->m_buf.size();
+        return static_cast<int64_t>(hctx->m_buf.size());
     }
 
     hctx->m_bufPtr = hctx->m_buf.begin();

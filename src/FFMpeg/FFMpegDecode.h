@@ -83,7 +83,6 @@ protected:
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    allocateResources(ffmpeg::DecodePar& p);
     void            singleThreadDecodeLoop();
-    void            checkStreamEnd(AVPacket* packet, ffmpeg::streamType tp);
     int             decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
@@ -92,6 +91,7 @@ protected:
     virtual void    transferFromHwToCpu();
     int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
     int             decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
+    void            onEndOfFile(ffmpeg::streamType t);
 
     ffmpeg::DecodePar                   m_par;
     ffmpeg::CustomIOContext             m_ioCtx;
