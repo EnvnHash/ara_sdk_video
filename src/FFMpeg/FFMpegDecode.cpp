@@ -83,24 +83,16 @@ void FFMpegDecode::singleThreadDecodeLoop() {
 
             // if it's the video stream and the m_buffer queue is not filled
             if (m_packet->stream_index == m_streamIndex[toType(streamType::video)]) {
+                checkStreamEnd(m_packet, streamType::video);
                 // we are using multiple frames, so the frames reaching here are not in a continuous order!!!!!!
-                m_actFrameNr = static_cast<uint32_t>(static_cast<double>(m_packet->pts) * m_timeBaseDiv[toType(streamType::video)] / m_frameDur[toType(streamType::video)]);
-                if ((m_totNumFrames - 1) == m_actFrameNr && !m_isStream) {
-                    if (m_par.endCb) {
-                        m_par.endCb();
-                    }
-
-                    if (m_par.loop) {
-                        av_seek_frame(m_formatContext, m_streamIndex[toType(streamType::video)], 0, AVSEEK_FLAG_BACKWARD);
-                    }
-                }
-
                 if (decodeVideoPacket(m_packet, m_videoCodecCtx) < 0) {
                     continue;
                 }
-            } else if (m_packet->stream_index == m_streamIndex[toType(streamType::audio)]
-                       && decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
-                continue;
+            } else if (m_packet->stream_index == m_streamIndex[toType(streamType::audio)]) {
+                checkStreamEnd(m_packet, streamType::audio);
+                if (decodeAudioPacket(m_packet, m_audioCodecCtx) < 0) {
+                    continue;
+                }
             }
 
             av_packet_unref(m_packet);
@@ -110,6 +102,26 @@ void FFMpegDecode::singleThreadDecodeLoop() {
     }
 
     m_endThreadCond.notify();	 // wait until the packet was needed
+}
+
+void FFMpegDecode::checkStreamEnd(AVPacket* packet, streamType tp) {
+    auto reachedEnd = false;
+    if (tp == streamType::video) {
+        auto actFrameNr = static_cast<uint32_t>(static_cast<double>(m_packet->pts) * m_timeBaseDiv[toType(tp)] / m_frameDur[toType(tp)]);
+        reachedEnd = (m_totNumFrames[toType(tp)] - 1) == actFrameNr && !m_isStream;
+    } else if (tp == streamType::audio) {
+        reachedEnd = m_timeBaseDiv[toType(streamType::audio)] * static_cast<double>(packet->pts) +
+                     m_timeBaseDiv[toType(streamType::audio)] * static_cast<double>(packet->duration) >= getDurationSec(tp);
+    }
+
+    if (reachedEnd) {
+        if (m_par.endCb) {
+            m_par.endCb();
+        }
+        if (m_par.loop) {
+            av_seek_frame(m_formatContext, m_streamIndex[toType(tp)], 0, AVSEEK_FLAG_BACKWARD);
+        }
+    }
 }
 
 void FFMpegDecode::setupHwDecoding() {
@@ -412,7 +424,9 @@ void FFMpegDecode::allocateResources(DecodePar& p) {
 
     m_frame = av_frame_alloc();
     m_audioFrame = av_frame_alloc();
-    m_totNumFrames = static_cast<uint32_t>(getTotalFrames(streamType::video));
+    for (int i=0; i<toType(streamType::size); ++i) {
+        m_totNumFrames[i] = static_cast<uint32_t>(getTotalFrames(static_cast<streamType>(i)));
+    }
     m_resourcesAllocated = true;
 }
 
@@ -740,8 +754,7 @@ int64_t FFMpegDecode::getTotalFrames(streamType t) {
         return 0;
     }
 
-    if (static_cast<int32_t>(m_formatContext->nb_streams) > m_streamIndex[toType(t)]
-        && m_streamIndex[toType(t)] >= 0
+    if (m_streamIndex[toType(t)] >= 0
         && m_formatContext->streams[m_streamIndex[toType(t)]]) {
         auto nbf = m_formatContext->streams[m_streamIndex[toType(t)]]->nb_frames;
         if (nbf == 0) {
@@ -755,9 +768,6 @@ int64_t FFMpegDecode::getTotalFrames(streamType t) {
 
 double FFMpegDecode::getFps(streamType t) {
     double fps = r2d(m_formatContext->streams[m_streamIndex[toType(t)]]->avg_frame_rate);
-    if (fps < m_epsZero) {
-        fps = r2d(m_formatContext->streams[m_streamIndex[toType(t)]]->avg_frame_rate);
-    }
     return fps;
 }
 

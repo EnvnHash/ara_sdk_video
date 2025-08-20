@@ -82,6 +82,7 @@ protected:
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    allocateResources(ffmpeg::DecodePar& p);
     void 			singleThreadDecodeLoop();
+    void            checkStreamEnd(AVPacket* packet, ffmpeg::streamType tp);
     int 			decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
@@ -166,7 +167,6 @@ protected:
     uint32_t 				            m_nrFramesToStart=2;
 
     unsigned int				        m_nrPboBufs=3;
-    unsigned int 				        m_actFrameNr=0;
 
     uint8_t**                           m_dstSampleBuffer=nullptr;
 
@@ -178,9 +178,9 @@ protected:
     std::array<double, 2>		        m_frameDur{};
     std::array<double, 2>		        m_streamDuration{}; // should be the same
     std::array<double, 2>		        m_lastPtss{-1.0, -1.0};
+    std::array<uint32_t, 2>				m_totNumFrames{};
     int 				                m_frameToUpload=-1;
 
-    unsigned int				        m_totNumFrames=0;
     std::vector<uint8_t>                m_memInputBuf;
     size_t                              m_avioCtxBufferSize=4096;
     AVIOContext*                        m_ioContext=nullptr;
