@@ -32,13 +32,16 @@ public:
     int32_t getSampleRate()                 { return m_audioFile ? m_audioFile->getSampleRate() : 0; }
     auto getType()                   { return m_audioFile ? m_audioFile->getType() : AudioFileFormat{}; }
     bool usingCycleBuf()                    { return m_audioFile && m_audioFile->usingCycleBuf(); }
+    bool isPlaying()                        { return m_playing; }
 
     void setLooping(bool val)       { m_looping = val; }
     void setPlayPos(int64_t pos)    { m_posPointer = pos; }
+    void setPlaying(bool val)       { m_playing = val; }
 
 protected:
     std::unique_ptr<AudioFile>  m_audioFile;
     bool                        m_looping = false;
+    bool                        m_playing = false;
     int64_t                     m_posPointer = 0;
     double                      m_playHead = 0;
 };

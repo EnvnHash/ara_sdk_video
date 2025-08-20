@@ -39,10 +39,18 @@ void PortaudioAudioEngine::play(PaAudioFile& samp) {
         LOGE << "Portaudio::play Error: cycleBuffer empty, can't add sample";
         return;
     }
+    samp.setPlaying(true);
     m_samplePlayQueue.emplace_back(&samp);
 }
 
+void PortaudioAudioEngine::stop(PaAudioFile& samp) {
+    samp.setPlaying(false);
+    unique_lock<mutex> l(m_queueMtx);
+    std::erase_if(m_samplePlayQueue, [&](auto it) { return it == &samp; });
+}
+
 void PortaudioAudioEngine::procSampleQueue() {
+    unique_lock<mutex> l(m_queueMtx);
     bool countUp = false;
     ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
     for (auto af : m_samplePlayQueue) {

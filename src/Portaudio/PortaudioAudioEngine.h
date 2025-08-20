@@ -13,6 +13,7 @@ class PortaudioAudioEngine : public Portaudio {
 public:
     bool init(const PaInitPar&) override;
     void play(PaAudioFile& samp);
+    void stop(PaAudioFile& samp);
     void procSampleQueue();
     PaAudioFile& loadAudioFile(const std::filesystem::path& p);
     PaAudioFile& loadAudioAsset(const std::filesystem::path& p);
@@ -23,6 +24,7 @@ private:
     std::chrono::system_clock::time_point   m_paStartTime{};
     std::list<PaAudioFile*>                 m_samplePlayQueue{};
     std::list<PaAudioFile>                  m_audioFiles{};
+    std::mutex                              m_queueMtx;
 };
 
 }
