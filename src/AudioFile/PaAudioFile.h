@@ -33,6 +33,8 @@ public:
     auto getType()                   { return m_audioFile ? m_audioFile->getType() : AudioFileFormat{}; }
     bool usingCycleBuf()                    { return m_audioFile && m_audioFile->usingCycleBuf(); }
     bool isPlaying()                        { return m_playing; }
+    bool reachedEnd()                       { return m_reachedEnd; }
+    void reset()                       { m_reachedEnd = false; m_playing = false; m_playHead = 0.0; m_posPointer = 0; }
 
     void setLooping(bool val)       { m_looping = val; }
     void setPlayPos(int64_t pos)    { m_posPointer = pos; }
@@ -42,6 +44,7 @@ protected:
     std::unique_ptr<AudioFile>  m_audioFile;
     bool                        m_looping = false;
     bool                        m_playing = false;
+    bool                        m_reachedEnd = false;
     int64_t                     m_posPointer = 0;
     double                      m_playHead = 0;
 };

@@ -87,8 +87,11 @@ void PaAudioFile::advance(int32_t frames, int32_t sampleRate) {
 void PaAudioFile::advancePlayHead(int32_t frames, int32_t sampleRate) {
     auto blockSizeSec = frames / static_cast<double>(sampleRate);
     m_playHead += blockSizeSec;
-    if (m_looping && (m_playHead + blockSizeSec) >= m_audioFile->getLengthInSeconds()) {
+    m_reachedEnd = (m_playHead + blockSizeSec) >= m_audioFile->getLengthInSeconds();
+    if (m_looping && m_reachedEnd) {
         m_playHead = 0.0;
+        m_reachedEnd = false;
+        m_playing = false;
     }
 }
 
