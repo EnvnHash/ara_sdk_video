@@ -75,7 +75,7 @@ if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})
 	add_library(ara::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 	if (ANDROID)
-		target_link_libraries(${PROJECT_NAME} android log yuv)
+		target_link_libraries(${PROJECT_NAME} android log yuv mediandk)
 	endif ()
 endif ()
 
