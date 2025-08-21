@@ -4,11 +4,6 @@ project(AudioVideo VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-include_directories(
-	${ara_sdk_INCLUDE_DIRS}
-	${ara_sdk_video_INCLUDE_DIRS}
-)
-
 file(GLOB GLB_SRC *.cpp)
 file(GLOB AUDIOFILE_SRC AudioFile/*.cpp)
 
@@ -81,3 +76,4 @@ if (VIDEO_ALL_SRC)
 endif ()
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${ara_sdk_COMPILE_DEFINITIONS} ${ara_sdk_video_COMPILE_DEFINITIONS})
+target_include_directories(${PROJECT_NAME} PUBLIC ${ara_sdk_INCLUDE_DIRS} ${ara_sdk_video_INCLUDE_DIRS})

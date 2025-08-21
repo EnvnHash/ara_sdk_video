@@ -6,11 +6,6 @@ set(SOURCES main.cpp)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 
-include_directories(
-    ${ara_sdk_INCLUDE_DIRS}
-    ${ara_sdk_video_INCLUDE_DIRS}
-)
-
 target_link_libraries (${PROJECT_NAME} ${ara_sdk_video_LIBRARIES} ${ara_sdk_LIBRARIES} GLBase SceneGraph AudioVideo Utilities)
 
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

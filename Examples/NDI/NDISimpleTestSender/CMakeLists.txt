@@ -15,11 +15,6 @@ else()
 	endif()
 endif()
 
-include_directories(
-	${ara_sdk_INCLUDE_DIRS}
-	${ara_sdk_video_INCLUDE_DIRS}
-)
-
 set(TARGET_LIBS ${ara_sdk_video_LIBRARIES} ${ara_sdk_LIBRARIES} GLBase SceneGraph AudioVideo Utilities)
 
 if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
