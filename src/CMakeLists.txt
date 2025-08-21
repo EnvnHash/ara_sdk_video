@@ -73,6 +73,7 @@ set(VIDEO_ALL_SRC test_class.cpp)
 set(VIDEO_ALL_SRC ${GLB_SRC} ${AUDIOFILE_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_NDI} ${GLB_PORTAUDIO} ${GLB_OPENAL} ${GLB_REALSENSE})
 if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})
+	add_library(ara::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
 endif ()
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC ${ara_sdk_COMPILE_DEFINITIONS} ${ara_sdk_video_COMPILE_DEFINITIONS})
