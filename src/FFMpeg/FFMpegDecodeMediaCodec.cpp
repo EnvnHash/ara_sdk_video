@@ -2,7 +2,7 @@
 // Created by sven on 07-08-25.
 //
 
-#ifdef __ANDROID__
+#if defined(__ANDROID__) && defined(ARA_USE_MEDIACODEC)
 
 #include "FFMpeg/FFMpegDecodeMediaCodec.h"
 
