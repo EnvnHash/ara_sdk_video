@@ -5,7 +5,7 @@ endif ()
 set(CMAKE_MODULE_PATH ${ARA_AV_SOURCE_DIR}/cmake/Modules)
 
 include(AraSdkVideoConfigure)
-include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdkMacros.cmake)
+include(${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules/AraSdkMacros.cmake)
 
 set(ara_sdk_video_INCLUDE_DIRS)
 set(ara_sdk_video_LIBRARIES)
