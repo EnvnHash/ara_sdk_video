@@ -35,3 +35,12 @@ add_subdirectory(Examples)
 add_subdirectory(src)
 add_subdirectory(third_party)
 #add_subdirectory(UnitTests)
+
+# pass ara_sdk dependencies variables to parent project in case it exists
+get_directory_property(hasParent PARENT_DIRECTORY)
+if (hasParent)
+    set(ara_sdk_video_COMPILE_DEFINITIONS "${ara_sdk_video_COMPILE_DEFINITIONS}" PARENT_SCOPE)
+    set(ara_sdk_video_INCLUDE_DIRS "${ara_sdk_video_INCLUDE_DIRS}" PARENT_SCOPE)
+    set(ara_sdk_video_LIBRARIES "${ara_sdk_video_LIBRARIES}" PARENT_SCOPE)
+    set(ara_sdk_video_BINARIES "${ara_sdk_video_BINARIES}" PARENT_SCOPE)
+endif()

@@ -23,12 +23,12 @@ endif()
 
 # translate cmake switches to preprocessor flags - nothing to do configure manually here
 if (ARA_USE_REALSENSE)
-    add_compile_definitions(ARA_USE_REALSENSE)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_REALSENSE)
 endif()
 
 # FFMpeg
 if (ARA_USE_FFMPEG)
-    add_compile_definitions(ARA_USE_FFMPEG)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_FFMPEG)
     if (WIN32)
         append_unique(ara_sdk_video_INCLUDE_DIRS ${THIRD_PARTY}/ffmpeg/include)
     else()
@@ -92,7 +92,7 @@ endif()
 
 # OpenAL
 if (ARA_USE_OPENAL)
-    add_compile_definitions(ARA_USE_OPENAL)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_OPENAL)
 
     if (WIN32)
         append_unique(ara_sdk_video_INCLUDE_DIRS ${ARA_AV_SOURCE_DIR}/third_party/OpenAL/include)
@@ -132,13 +132,13 @@ endif()
 
 # ARCORE
 if (ANDROID AND ARA_USE_ARCORE)
-    add_compile_definitions(ARA_USE_ARCORE)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_ARCORE)
     append_unique(ara_sdk_video_INCLUDE_DIRS ${ARA_AV_SOURCE_DIR}/third_party/ARCore/include)
 endif()
 
 # Portaudio
 if (ARA_USE_PORTAUDIO)
-    add_compile_definitions(ARA_USE_PORTAUDIO)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_PORTAUDIO)
 
     if (WIN32)
         append_unique(ara_sdk_video_INCLUDE_DIRS ${ARA_AV_SOURCE_DIR}/third_party/portaudio/include)
@@ -162,7 +162,7 @@ endif()
 
 # NDI
 if (ARA_USE_NDI)
-    add_compile_definitions(ARA_USE_NDI)
+    append_unique(ara_sdk_video_COMPILE_DEFINITIONS ARA_USE_NDI)
     if(ANDROID)
         append_unique(ara_sdk_video_INCLUDE_DIRS ${ARA_AV_SOURCE_DIR}/third_party/NDI/Android/Include)
     else()

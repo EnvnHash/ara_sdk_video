@@ -76,4 +76,4 @@ if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})
 endif ()
 
-target_compile_definitions(${PROJECT_NAME} PUBLIC ${ara_sdk_COMPILE_DEFINITIONS})
+target_compile_definitions(${PROJECT_NAME} PUBLIC ${ara_sdk_COMPILE_DEFINITIONS} ${ara_sdk_video_COMPILE_DEFINITIONS})
