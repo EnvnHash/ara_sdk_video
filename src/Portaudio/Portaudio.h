@@ -16,6 +16,8 @@
 
 #ifdef __APPLE__
 #include <pa_mac_core.h>
+#elif __ANDROID__
+#include <pa_opensles.h>
 #elif __linux__
 //#include <pa_jack.h>
 #include <pa_linux_alsa.h>

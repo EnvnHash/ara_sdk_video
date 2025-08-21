@@ -66,8 +66,8 @@ int32_t Portaudio::openStreams() {
                                     m_inputParameters.channelCount,
                                     m_outputParameters.channelCount,
                                     paFloat32,                          // always 32 bit floating point for simplicity
-                                    m_sampleRate,
-                                    m_framesPerBuffer,
+                                    static_cast<double>(m_sampleRate),
+                                static_cast<unsigned long>(m_framesPerBuffer),
                                     paCallback,
                                     reinterpret_cast<void*>(this));
 }
@@ -179,7 +179,7 @@ int Portaudio::getValidOutSampleRate(int destSampleRate) {
  * channel data must be passed interleaved (left[0], right[0], left[1], right[1], etc)
 */
 int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
-                          uint64_t framesPerBuffer,
+                          unsigned long framesPerBuffer,
                           const PaStreamCallbackTimeInfo*,
                           PaStreamCallbackFlags,
                           void *userData) {
