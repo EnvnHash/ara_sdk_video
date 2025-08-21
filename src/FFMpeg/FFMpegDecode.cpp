@@ -569,8 +569,6 @@ void FFMpegDecode::transferFromHwToCpu() {
     }
 
     m_frames.getWriteBuff().frame->pts = m_frame->pts;
-    //m_frames.getWriteBuff().frame->pkt_size = m_frame->pkt_size;
-    //m_frames.getWriteBuff().frame->coded_picture_number = m_frame->coded_picture_number;
     m_frames.getWriteBuff().frame->pict_type = m_frame->pict_type;
 }
 

@@ -105,7 +105,9 @@ struct DecodePar {
     bool                    decodeYuv420OnGpu = true;
     bool                    startDecodeThread = false;
     std::string             assetName;
-
+#ifdef __ANDROID__
+    struct android_app*     app=nullptr;
+#endif
     std::function<void()> initCb;
     std::function<void()> endCb;
 };

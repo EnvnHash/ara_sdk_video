@@ -6,6 +6,8 @@
 
 #include "FFMpeg/FFMpegDecodeMediaCodec.h"
 
+using namespace std;
+
 namespace ara::av {
 
 void FFMpegDecodeMediaCodec::openCamera(const ffmpeg::DecodePar& p) {
@@ -15,7 +17,7 @@ void FFMpegDecodeMediaCodec::openCamera(const ffmpeg::DecodePar& p) {
     m_isStream = true;
     m_videoFrameBufferSize = 2;
 
-    initFFMpeg();
+    ffmpeg::initFFMpeg();
     try {
         allocFormatContext();
 
@@ -34,9 +36,10 @@ void FFMpegDecodeMediaCodec::openCamera(const ffmpeg::DecodePar& p) {
     }
 }
 
-bool FFMpegDecodeMediaCodec::openAndroidAsset(const FFMpegDecodePar& p) {
+bool FFMpegDecodeMediaCodec::openAndroidAsset(const ffmpeg::DecodePar& p) {
+    m_par = p;
     m_resourcesAllocated = false;
-    m_videoFrameBufferSize = useHwAccel ? 32 : 32;
+    m_videoFrameBufferSize = p.useHwAccel ? 32 : 32;
 
     avformat_network_init();
     m_logLevel = AV_LOG_INFO;
@@ -44,28 +47,28 @@ bool FFMpegDecodeMediaCodec::openAndroidAsset(const FFMpegDecodePar& p) {
     av_log_set_callback( &ffmpeg::LogCallbackShim );	// custom logging
     allocFormatContext();
 
-    if (assetName.empty()) {
+    if (p.assetName.empty()) {
         return false;
     }
 
-    AAsset* assetDescriptor = AAssetManager_open(app->activity->assetManager, assetName.c_str(), AASSET_MODE_BUFFER);
-    if (useHwAccel) {
+    AAsset* assetDescriptor = AAssetManager_open(p.app->activity->assetManager, p.assetName.c_str(), AASSET_MODE_BUFFER);
+    if (p.useHwAccel) {
         initMediaCode(assetDescriptor);
     }
     openAsset(assetDescriptor);
 
-    if (startDecodeThread) {
-        m_decodeThread = std::thread([this, initCb] {
-                                         allocateResources();
+    if (p.startDecodeThread) {
+        m_decodeThread = std::thread([this] {
+                                         allocateResources(m_par);
                                          m_startTime = 0.0;
                                          m_run = true;
-                                         setupStreams(nullptr, &m_formatOpts, initCb);
+                                         setupStreams(nullptr, &m_formatOpts, m_par);
                                          singleThreadDecodeLoop();
                                      });
         m_decodeThread.detach();
         return true;
     } else {
-        return setupStreams(nullptr, &m_formatOpts, initCb);
+        return setupStreams(nullptr, &m_formatOpts, m_par);
     }
 }
 
@@ -145,7 +148,7 @@ bool FFMpegDecodeMediaCodec::openAsset(AAsset* assetDescriptor) {
             m_avioCtxBufferSize,     // Buffer size
             0,                          // Buffer is only readable - set to 1 for read/write
             &m_meminBuffer,            // User (your) specified data
-            &FFMpegDecode::read_packet_from_inbuf,      // Function - Reading Packets (see example)
+            &FFMpegDecodeMediaCodec::readPacketFromInbuf,      // Function - Reading Packets (see example)
             0,                          // Function - Write Packets
             nullptr                     // Function - Seek to position in stream (see example)
     );
@@ -162,43 +165,60 @@ bool FFMpegDecodeMediaCodec::openAsset(AAsset* assetDescriptor) {
    return true;
 }
 
+int FFMpegDecodeMediaCodec::readPacketFromInbuf(void *opaque, uint8_t *buf, int buf_size) {
+    auto *bd = (struct memin_buffer_data*) opaque;
+    buf_size = std::min<int>(buf_size, (int)bd->size);
+
+    // loop
+    if (!buf_size)
+        bd->ptr = bd->start;
+
+    // copy internal buffer data to buf
+    memcpy(buf, bd->ptr, buf_size);
+    bd->ptr  += buf_size;
+    bd->size -= buf_size;
+
+    return buf_size;
+}
+
 void FFMpegDecodeMediaCodec::setDefaultHwDevice() {
     m_defaultHwDevType = "mediacodec";
 }
 
-void FFMpegDecodeMediaCodec::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecParameters) {
-    FFMpeg::Decode();
+void FFMpegDecodeMediaCodec::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecParameters, const AVCodec*) {
     m_bsf = (AVBitStreamFilter*) av_bsf_get_by_name((char*)"h264_mp4toannexb");
         if(!m_bsf){
             LOGE << "bitstreamfilter not found";
-            return AVERROR_BSF_NOT_FOUND;
+            return;
         }
+        int ret=0;
         if ((ret = av_bsf_alloc(m_bsf, &m_bsfCtx)))
-            return ret;
+            return;
         if (((ret = avcodec_parameters_from_context(m_bsfCtx->par_in, m_videoCodecCtx)) < 0) ||
             ((ret = av_bsf_init(m_bsfCtx)) < 0)) {
             av_bsf_free(&m_bsfCtx);
             LOGE << "av_bsf_init failed";
-            return ret;
+            return;
         }
 }
 
-int32_t FFMpegDecode::sendPacket(AVPacket* packet, AVCodecContext*) {
+int32_t FFMpegDecodeMediaCodec::sendPacket(AVPacket* packet, AVCodecContext*) {
     return mediaCodecGetInputBuffer(packet);
 }
 
-int32_t FFMpegDecode::checkReceiveFrame(AVCodecContext* codecContext) {
+int32_t FFMpegDecodeMediaCodec::checkReceiveFrame(AVCodecContext* codecContext) {
     return mediaCodecDequeueOutputBuffer();
 }
 
-void FFMpegDecode::transferFromHwToCpu() {
+void FFMpegDecodeMediaCodec::transferFromHwToCpu() {
     size_t hwBufSize;
+    int response=0;
     auto buffer = mediaCodecGetOutputBuffer(response, hwBufSize);
-    memcpy(&m_frames[m_decFramePtr]->data[0][0], buffer, m_rawBuffer[m_decFramePtr].size());
 
-    m_frames[m_decFramePtr]->pts = m_mediaCodecInfo.presentationTimeUs * av_q2d(m_formatContext->streams[m_videoStreamIndex]->time_base) * 1000;
-    m_frames[m_decFramePtr]->pkt_size = packet->size;
-    m_frames[m_decFramePtr]->format = (AVPixelFormat) codecContext->pix_fmt;
+    memcpy(&m_frames.getWriteBuff().frame->data[0][0], buffer, hwBufSize);
+
+    m_frames.getWriteBuff().frame->pts = m_mediaCodecInfo.presentationTimeUs * av_q2d(m_formatContext->streams[toType(ffmpeg::streamType::video)]->time_base) * 1000;
+    m_frames.getWriteBuff().frame->pict_type = m_frame->pict_type;
 
     mediaCodecReleaseOutputBuffer(response);
 }
