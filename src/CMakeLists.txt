@@ -40,6 +40,10 @@ if (ARA_USE_NDI)
 	LIST(APPEND REQUIRED_THIRD_PARTY_DIRS "NDI")
 endif()
 
+if (ARA_USE_PORTAUDIO)
+	LIST(APPEND REQUIRED_THIRD_PARTY_DIRS "portaudio")
+endif()
+
 # Main script logic
 find_program(UNZIP_EXECUTABLE NAMES unzip)
 
