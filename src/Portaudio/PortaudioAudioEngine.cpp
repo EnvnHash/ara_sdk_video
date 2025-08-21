@@ -43,7 +43,7 @@ void PortaudioAudioEngine::play(PaAudioFile& samp) {
     m_samplePlayQueue.emplace_back(&samp);
 }
 
-void PortaudioAudioEngine::stop(PaAudioFile& samp) {
+void PortaudioAudioEngine::stopAudioFile(PaAudioFile& samp) {
     samp.setPlaying(false);
     unique_lock<mutex> l(m_queueMtx);
     std::erase_if(m_samplePlayQueue, [&](auto it) { return it == &samp; });

@@ -1,11 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_CXX_STANDARD 17)
-
-include(GeneralSettings)
-include(VisualStudioSettings)
 
 project(FFmpegAndroidDebug)
 

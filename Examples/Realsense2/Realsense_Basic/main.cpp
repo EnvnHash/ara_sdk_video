@@ -6,7 +6,7 @@
 #include "example-utils.hpp"
 
 using namespace std;
-using namespace ara::glb;
+using namespace ara;
 
 GLFWWindow gwin;           // create an instance, this will do nothing
 GLBase m_glbase;
@@ -25,10 +25,7 @@ bool staticDrawFunc(double, double, int)
 {
     Texture tex(&m_glbase);
     texShader = shCol.getStdTex(); // get a simple standard color shader
-
-    quad = make_unique<Quad>(-1.f, -1.f, 2.f, 2.f,
-                             glm::vec3(0.f, 0.f, 1.f),
-                             1.f, 0.f, 0.f, 1.f, nullptr, 1, true);  // create a Quad, standard width and height (normalized into -1|1), static red
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
     std::string serial;
     if (!device_with_streams({ RS2_STREAM_COLOR,RS2_STREAM_DEPTH }, serial))
@@ -89,15 +86,11 @@ bool staticDrawFunc(double, double, int)
 int main(int argc, char * argv[]) try
 {
     // direct window creation
-    glWinPar gp;             // define Parameters for windows instanciating
-    gp.width = 1280;        // set the windows width
-    gp.height = 720;       // set the windows height
-    gp.doInit = true;       // GWindow needs GLFW library to be m_inited. GWindow can do this itself. Standard is true
-    gp.shiftX = 10;        // x offset relative to OS screen canvas
-    gp.shiftY = 10;        // y offset relative to OS screen canvas
-
-    gwin.init(gp);    // now pass the arguments and create the window
-    ara::glb::initGLEW();
+    gwin.init({
+        .shift = { 10, 10 },  //  offset relative to OS screen canvas
+        .size = { 1280, 7200 }  // set the windows size
+    });    // now pass the arguments and create the window
+    ara::initGLEW();
 
     // start a draw loop
     gwin.runLoop(staticDrawFunc);

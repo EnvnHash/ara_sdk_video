@@ -13,7 +13,7 @@ class PortaudioAudioEngine : public Portaudio {
 public:
     bool init(const PaInitPar&) override;
     void play(PaAudioFile& samp);
-    void stop(PaAudioFile& samp);
+    void stopAudioFile(PaAudioFile& samp);
     void procSampleQueue();
     PaAudioFile& loadAudioFile(const std::filesystem::path& p);
     PaAudioFile& loadAudioAsset(const std::filesystem::path& p);

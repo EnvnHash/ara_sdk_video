@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-set(CMAKE_MODULE_PATH ${ARA_SDK_SOURCE_DIR}/Libraries/cmake/Modules)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
-
-include(GeneralSettings)
-include(VisualStudioSettings)
 
 project(FFmpegTest_UIApp)
 
@@ -36,23 +32,14 @@ else()
 	endif()
 endif()
 
-include(GLBaseDepInclude)
-include(GLBaseDependencies)
-include(GLBaseCopyDependencies)
-include(Gtk3Include)
-include(ResCompInclude)
-include(PugiXMLInclude)
-include(UtilitiesDepInclude)
-include(UtilitiesDependencies)
-include(UtilitiesCopyDependencies)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
-
 set(TARGET_LIBS ${ara_sdk_video_LIBRARIES})
 
 list(APPEND TARGET_LIBS GLBase SceneGraph AudioVideo UI Utilities)
 if(NOT ${CMAKE_BUILD_TYPE} MATCHES Debug OR ANDROID)
 	list(APPEND TARGET_LIBS resources)
 endif()
+
+include(ResCompInclude)
 
 target_link_libraries (${PROJECT_NAME} ${TARGET_LIBS})
 

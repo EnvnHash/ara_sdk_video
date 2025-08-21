@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.12)
 
-project(FFmpeg)
-
 if(NOT ANDROID)
     add_subdirectory(FFmpegEncode)
     add_dependencies(FFmpegEncode Utilities GLBase SceneGraph AudioVideo)
@@ -23,6 +21,5 @@ if(NOT ANDROID)
 
         add_subdirectory(FFmpegTest_UIApp)
         add_dependencies(FFmpegTest_UIApp Utilities GLBase SceneGraph AudioVideo)
-
     endif()
 endif()

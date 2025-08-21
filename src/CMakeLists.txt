@@ -2,9 +2,6 @@ cmake_minimum_required(VERSION 3.12)
 
 project(AudioVideo VERSION 0.1 LANGUAGES CXX)
 
-include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/GeneralSettings.cmake)
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
-
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 include_directories(
@@ -78,3 +75,5 @@ set(VIDEO_ALL_SRC ${GLB_SRC} ${AUDIOFILE_SRC} ${GLB_FFMPEG} ${GLB_ARCORE} ${GLB_
 if (VIDEO_ALL_SRC)
 	add_library(${PROJECT_NAME} OBJECT ${VIDEO_ALL_SRC})
 endif ()
+
+target_compile_definitions(${PROJECT_NAME} PUBLIC ${ara_sdk_COMPILE_DEFINITIONS})

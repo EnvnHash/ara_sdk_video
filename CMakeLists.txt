@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.12)
 cmake_policy(SET CMP0146 NEW)
 
 project(AudioVideo)
+set(CMAKE_CXX_STANDARD 20)
 
 set (ARA_AV_IS_SUBPROJECT OFF)
 if (NOT ARA_AV_SOURCE_DIR)
@@ -14,13 +15,11 @@ if (NOT ARA_AV_SOURCE_DIR)
     endif()
 endif()
 
-include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideoConfigure.cmake)
-
 if (NOT ARA_AV_IS_SUBPROJECT)
     include(FetchContent)
     Set(FETCHCONTENT_QUIET FALSE)
 
-    message(STATUS "build ara sdk lite - checking for updates")
+    message(STATUS "build ara sdk - checking for updates")
     FetchContent_Declare(
         ara_sdk
         GIT_REPOSITORY https://github.com/envnhash/ara_sdk.git
@@ -28,8 +27,9 @@ if (NOT ARA_AV_IS_SUBPROJECT)
         GIT_PROGRESS ON
     )
     FetchContent_MakeAvailable(ara_sdk)
-    include(${ara_sdk_SOURCE_DIR}/Libraries/cmake/Modules/AraSdk.cmake)
 endif()
+
+include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
 add_subdirectory(Examples)
 add_subdirectory(src)

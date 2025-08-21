@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <chrono>
 #include <thread>
-#include "../../Libraries/Utilities/src/Network/Network_Common.h"
+#include <Network/NetworkCommon.h>
 
 #ifdef _WIN32
 
@@ -20,18 +20,18 @@
 #include "picopng.hpp"
 #include <string.h>
 #include <Processing.NDI.Lib.h>
-#include <Network/UDPSignaler.h>
-#include <Network/UDPListener.h>
+#include <Network/UDPSender.h>
+#include <Network/UDPReceiver.h>
 
 using namespace std;
-using namespace ara::util;
+using namespace ara;
 
 std::string								g_StationName = { "Test-NDIServer" };
 
-UDPSignaler								g_UDPSignaler;
+UDPSender								g_UDPSignaler;
 int										g_UDPSignaler_Port=18072;
 
-UDPListener								g_UDPListener;
+UDPReceiver								g_UDPListener;
 int										g_UDPListener_Port=18072;
 int										g_UDPSignaler_Period_ms=1000;
 
