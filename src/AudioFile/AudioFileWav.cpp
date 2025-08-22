@@ -9,17 +9,20 @@ namespace ara::av {
 AudioFileWav::AudioFileWav() {
     m_audioFileFormat = AudioFileFormat::Wave;
     m_samples.resize(1);
-    m_samples[0].resize(0);
+   // m_samples[0].resize(0);
 }
 
 bool AudioFileWav::decodeFile(const std::vector<uint8_t>& fileData) {
     m_numSamplesPerChannel = m_dataChunkSize / (m_numChannels * m_numBytesPerSample);
-    int samplesStartIndex = m_indexOfDataChunk + 8;
-    return parseSamples(fileData, samplesStartIndex, AudioFileFormat::Wave);
+    return parseSamples(fileData, m_indexOfDataChunk + 8, AudioFileFormat::Wave);
 }
 
 bool AudioFileWav::procFormatChunk(const std::vector<uint8_t>& fileData) {
     int f = m_indexOfFormatChunk;
+    if (fileData.size() < f+4) {
+        return false;
+    }
+
     std::string formatChunkID(fileData.begin() + f, fileData.begin() + f + 4);
     m_audioFormat = twoBytesToInt(fileData, f + 8);
     m_numChannels = twoBytesToInt(fileData, f + 10);

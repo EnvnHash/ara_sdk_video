@@ -55,7 +55,7 @@ float PaAudioFile::consumeByBlock(int32_t frame, int32_t chan, int32_t) {
 
 float PaAudioFile::consumeInterpolated(int32_t frame, int32_t chan, int32_t sampleRate) {
     auto playPosInSec = static_cast<double>(frame) / static_cast<double>(sampleRate) + m_playHead;
-    if (playPosInSec >= m_audioFile->getLengthInSeconds()) {
+    if (!m_audioFile->isLoaded() || playPosInSec >= m_audioFile->getLengthInSeconds()) {
         return 0.f;
     }
 

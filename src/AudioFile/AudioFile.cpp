@@ -112,18 +112,15 @@ bool AudioFile::loadFromFile(const AudioFileLoadPar& p) {
 }
 
 bool AudioFile::loadFromMemory(const std::vector<uint8_t>& fileData, AudioFileFormat aff) {
-    if (!procHeaderChunk(fileData, aff)) {
-        return false;
-    }
-
-    if (!procFormatChunk(fileData)) {
+    if (!procHeaderChunk(fileData, aff)
+        || !procFormatChunk(fileData)
+        || fileData.size() < m_indexOfDataChunk + 4) {
         return false;
     }
 
     std::string dataChunkID(fileData.begin() + m_indexOfDataChunk, fileData.begin() + m_indexOfDataChunk + 4);
     m_dataChunkSize = fourBytesToInt(fileData, m_indexOfDataChunk + 4);
     m_numBytesPerSample = m_bitDepth / 8;
-    clearAudioBuffer();
     m_samples.resize(m_sampleOrder == SampleOrder::Packed ? m_numChannels : 1);
 
     auto res = decodeFile(fileData);
@@ -134,6 +131,9 @@ bool AudioFile::loadFromMemory(const std::vector<uint8_t>& fileData, AudioFileFo
 }
 
 bool AudioFile::procHeaderChunk(const std::vector<uint8_t>& fileData, AudioFileFormat aff) {
+    if (fileData.size() < 12) {
+        return false;
+    }
     std::string headerChunkID(fileData.begin(), fileData.begin() + 4);
     std::string format(fileData.begin() + 8, fileData.begin() + 12);
 
@@ -178,13 +178,21 @@ bool AudioFile::parseSamples(const std::vector<uint8_t>& fileData, int32_t sampl
     }
 
     std::unordered_map<int32_t, std::function<float(const SampleParseData&)>> parseMap {
-        { 8, [&](const SampleParseData& sd){ return parse8BitSample(sd); }},
-        {16, [&](const SampleParseData& sd){ return parse16BitSample(sd); }},
-        {24, [&](const SampleParseData& sd){ return parse24BitSample(sd); }},
-        {32, [&](const SampleParseData& sd){ return parse32BitSample(sd); }}
+        { 8, [](const SampleParseData& sd){ return parse8BitSample(sd); }},
+        {16, [](const SampleParseData& sd){ return parse16BitSample(sd); }},
+        {24, [](const SampleParseData& sd){ return parse24BitSample(sd); }},
+        {32, [this](const SampleParseData& sd){ return parse32BitSample(sd); }}
     };
 
     SampleParseData sd{ .sampleIndex = 0, .channel = 0, .aff = aff, .fileData = fileData };
+
+    if (m_sampleOrder == SampleOrder::Packed) {
+        for (int channel = 0; channel < m_numChannels; channel++) {
+            m_samples[sd.channel].resize(m_numSamplesPerChannel);
+        }
+    } else {
+        m_samples[0].resize(m_numSamplesPerChannel * m_numChannels);
+    }
 
     for (int i = 0; i < m_numSamplesPerChannel; ++i) {
         for (int channel = 0; channel < m_numChannels; channel++) {
@@ -197,9 +205,9 @@ bool AudioFile::parseSamples(const std::vector<uint8_t>& fileData, int32_t sampl
 
             auto sample = parseMap[m_bitDepth](sd);
             if (m_sampleOrder == SampleOrder::Packed) {
-                m_samples[sd.channel].emplace_back(sample);
+                m_samples[sd.channel][i] = sample;
             } else {
-                m_samples[0].emplace_back(sample);
+                m_samples[0][i * m_numChannels + channel] = sample;
             }
         }
     }
@@ -370,9 +378,7 @@ int AudioFile::getIndexOfChunk(const std::vector<uint8_t>& source, const std::st
 }
 
 void AudioFile::reportError(const std::string& errorMessage) const {
-    if (m_logErrorsToConsole) {
-        LOGE << errorMessage;
-    }
+    LOGE << errorMessage;
 }
 
 }

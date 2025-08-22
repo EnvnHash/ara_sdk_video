@@ -9,12 +9,19 @@ using namespace std;
 namespace ara::av {
 
 bool PortaudioAudioEngine::init(const PaInitPar& pa) {
-    auto r = Portaudio::init(pa);
+    return Portaudio::init(pa);
+}
+
+void PortaudioAudioEngine::start() {
+    Portaudio::start();
     m_paStartTime = chrono::system_clock::now();
-    m_streamProcCb = [this](const void*, void*, uint64_t) {
-        procSampleQueue();
-    };
-    return r;
+    m_procQueueThread = std::thread([this] {
+        while (m_isPlaying) {
+            procSampleQueue();
+        }
+    });
+    m_procQueueThread.detach();
+
 }
 
 PaAudioFile& PortaudioAudioEngine::loadAudioAsset(const filesystem::path& p) {
@@ -41,6 +48,7 @@ void PortaudioAudioEngine::play(PaAudioFile& samp) {
     }
     samp.reset();
     samp.setPlaying(true);
+    unique_lock<mutex> l(m_queueMtx);
     m_samplePlayQueue.emplace_back(&samp);
 }
 
@@ -51,6 +59,11 @@ void PortaudioAudioEngine::stopAudioFile(PaAudioFile& samp) {
 }
 
 void PortaudioAudioEngine::procSampleQueue() {
+    if (m_cycleBuffer.empty() || m_cycleBuffer.isFilled()) {
+        this_thread::sleep_for(500us);
+        return;
+    }
+
     unique_lock<mutex> l(m_queueMtx);
 
     // remove ended samples

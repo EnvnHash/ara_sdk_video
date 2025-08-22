@@ -16,7 +16,8 @@ bool FFMpegAudioFile::load(const AudioFileLoadPar& p) {
     m_extPortaudio = p.portaudio;
     openFile({
         .filePath = p.filePath,
-        .isAsset = p.isAsset
+        .isAsset = p.isAsset,
+        .useHwAccel = false
     });
     m_numChannels = m_audioCodecCtx->ch_layout.nb_channels;
     FFMpegDecode::start(0.0);

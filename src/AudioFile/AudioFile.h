@@ -197,7 +197,7 @@ protected:
 
     void reportError(const std::string &errorMessage) const;
 
-    std::deque<std::deque<float>> m_samples;
+    std::vector<std::vector<float>> m_samples;
     uint32_t            m_sampleRate = 44100;
     int32_t             m_numChannels = 0;
     uint16_t            m_numBytesPerBlock = 0;

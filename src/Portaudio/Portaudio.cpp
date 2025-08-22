@@ -63,13 +63,17 @@ bool Portaudio::init(const PaInitPar& p) {
 int32_t Portaudio::openStreams() {
     // Open an audio I/O stream.
     return Pa_OpenDefaultStream(&stream,
-                                    m_inputParameters.channelCount,
-                                    m_outputParameters.channelCount,
-                                    paFloat32,                          // always 32 bit floating point for simplicity
-                                    static_cast<double>(m_sampleRate),
+#ifdef __ANDROID__
+                                0,
+#else
+                                m_inputParameters.channelCount,
+#endif
+                                m_outputParameters.channelCount,
+                                paFloat32,                          // always 32 bit floating point for simplicity
+                                static_cast<double>(m_sampleRate),
                                 static_cast<unsigned long>(m_framesPerBuffer),
-                                    paCallback,
-                                    reinterpret_cast<void*>(this));
+                                paCallback,
+                                reinterpret_cast<void*>(this));
 }
 
 void Portaudio::start() {
