@@ -59,10 +59,7 @@ void PortaudioAudioEngine::procSampleQueue() {
         return;
     }
 
-    if (m_cycleBuffer.isFilled()) {
-        m_cycleBuffer.waitNotFilled();
-    }
-
+    m_cycleBuffer.waitUntilNotFilled();
     bool countUp = false;
 
     {

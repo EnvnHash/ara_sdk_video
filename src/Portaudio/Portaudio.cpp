@@ -79,20 +79,19 @@ int32_t Portaudio::openStreams() {
 
 void Portaudio::start() {
     if (m_state != paState::Running) {
-        auto err = openStreams();
+        int err;
+        if ((err = openStreams()) != paNoError) {
+            terminate(err);
+            return;
+        }
+
         m_numChannels = m_outputParameters.channelCount;
 
         if (m_initPar.allocateBuffers) {
             m_cycleBuffer.allocate(m_initPar.allocateBuffers, m_framesPerBuffer * m_outputParameters.channelCount);
         }
 
-        if (err != paNoError) {
-            terminate(err);
-            return;
-        }
-
-        err = Pa_StartStream( stream );
-        if (err != paNoError) {
+        if ((err = Pa_StartStream(stream)) != paNoError) {
             terminate(err);
             return;
         }
