@@ -188,7 +188,7 @@ bool AudioFile::parseSamples(const std::vector<uint8_t>& fileData, int32_t sampl
 
     if (m_sampleOrder == SampleOrder::Packed) {
         for (int channel = 0; channel < m_numChannels; channel++) {
-            m_samples[sd.channel].resize(m_numSamplesPerChannel);
+            m_samples[channel].resize(m_numSamplesPerChannel);
         }
     } else {
         m_samples[0].resize(m_numSamplesPerChannel * m_numChannels);

@@ -14,7 +14,7 @@ int main(int argc, char** argv) {
     PortaudioAudioEngine pa;
     pa.init({
         .numChannels = 2,
-        .allocateBuffers = 3
+        .allocateBuffers = 5
     });
 
     auto& sine = pa.loadAudioFile("sine.wav");

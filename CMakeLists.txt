@@ -31,7 +31,7 @@ endif()
 
 include(${ARA_AV_SOURCE_DIR}/cmake/Modules/AraSdkVideo.cmake)
 
-if (NOT ${ARA_IS_SUBPROJECT})
+if (NOT ${ARA_AV_IS_SUBPROJECT})
     add_subdirectory(Examples)
 endif ()
 add_subdirectory(src)

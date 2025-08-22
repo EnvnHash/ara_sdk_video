@@ -8,20 +8,16 @@ using namespace std;
 
 namespace ara::av {
 
-bool PortaudioAudioEngine::init(const PaInitPar& pa) {
-    return Portaudio::init(pa);
-}
-
 void PortaudioAudioEngine::start() {
     Portaudio::start();
+    m_state = paState::Preparing;
     m_paStartTime = chrono::system_clock::now();
     m_procQueueThread = std::thread([this] {
-        while (m_isPlaying) {
+        while (toType(m_state) >= toType(paState::Preparing)) {
             procSampleQueue();
         }
     });
     m_procQueueThread.detach();
-
 }
 
 PaAudioFile& PortaudioAudioEngine::loadAudioAsset(const filesystem::path& p) {
@@ -59,27 +55,34 @@ void PortaudioAudioEngine::stopAudioFile(PaAudioFile& samp) {
 }
 
 void PortaudioAudioEngine::procSampleQueue() {
-    if (m_cycleBuffer.empty() || m_cycleBuffer.isFilled()) {
-        this_thread::sleep_for(500us);
+    if (m_cycleBuffer.empty()) {
         return;
     }
 
-    unique_lock<mutex> l(m_queueMtx);
-
-    // remove ended samples
-    erase_if(m_samplePlayQueue, [](auto af) { return af->reachedEnd(); });
+    if (m_cycleBuffer.isFilled()) {
+        m_cycleBuffer.waitNotFilled();
+    }
 
     bool countUp = false;
-    ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
-    for (auto af : m_samplePlayQueue) {
-        if (af->usingCycleBuf() || (af->getBuffer() && (af->getPlayPos() < af->getBuffer()->size() || af->isLooping()))) {
-            addAudioFileAtPos(*af);
-            countUp = true;
+
+    {
+        unique_lock<mutex> l(m_queueMtx);
+        erase_if(m_samplePlayQueue, [](auto af) { return af->reachedEnd(); });
+        ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
+
+        for (auto af : m_samplePlayQueue) {
+            if (af->usingCycleBuf() || (af->getBuffer() && (af->getPlayPos() < af->getBuffer()->size() || af->isLooping()))) {
+                addAudioFileAtPos(*af);
+                countUp = true;
+            }
         }
     }
 
     if (countUp) {
         m_cycleBuffer.feedCountUp();
+        if (m_state == paState::Preparing && m_cycleBuffer.isFilled()) {
+            m_state = paState::Running;
+        }
     }
 }
 

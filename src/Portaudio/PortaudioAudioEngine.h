@@ -11,13 +11,13 @@ namespace ara::av {
 
 class PortaudioAudioEngine : public Portaudio {
 public:
-    bool init(const PaInitPar&) override;
     void start() override;
     void play(PaAudioFile& samp);
     void stopAudioFile(PaAudioFile& samp);
     void procSampleQueue();
     PaAudioFile& loadAudioFile(const std::filesystem::path& p);
     PaAudioFile& loadAudioAsset(const std::filesystem::path& p);
+
 private:
     void addAudioFileAtPos(PaAudioFile& af);
     int32_t getActFrameBufPos();

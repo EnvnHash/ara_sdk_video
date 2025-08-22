@@ -57,6 +57,7 @@ bool Portaudio::init(const PaInitPar& p) {
         m_framesPerBuffer = p.framesPerBuffer;
     }
 
+    m_state = paState::Inited;
     return true;
 }
 
@@ -77,7 +78,7 @@ int32_t Portaudio::openStreams() {
 }
 
 void Portaudio::start() {
-    if (!m_isPlaying) {
+    if (m_state != paState::Running) {
         auto err = openStreams();
         m_numChannels = m_outputParameters.channelCount;
 
@@ -96,25 +97,26 @@ void Portaudio::start() {
             return;
         }
 
-        m_isPlaying = true;
-        LOG << " --- Portaudio playing!";
+        m_state = paState::Running;
+        LOG << " --- Portaudio started!";
     }
 }
 
 void Portaudio::pause() {
     Pa_StopStream(stream);
-    m_isPlaying = false;
+    m_state = paState::Paused;
 }
 
 void Portaudio::stop() {
     pause();
     Pa_CloseStream(stream);
+    m_state = paState::Stopped;
     LOG << " --- Portaudio stopped!";
 }
 
 void Portaudio::resume() {
     Pa_StartStream(stream);
-    m_isPlaying = true;
+    m_state = paState::Preparing;
 }
 
 bool Portaudio::isNrOutChanSupported(int destNrChannels) {
@@ -191,7 +193,10 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
     auto out = reinterpret_cast<float*>(outputBuffer);
 
     // if cycle m_buffer not filled, set samples to zero and init
-    if (ctx->useCycleBuf() && !ctx->m_cycleBuffer.empty() && ctx->getCycleBuffer().getFillAmt() != 0) {
+    if (ctx->getState() == paState::Running
+        && ctx->useCycleBuf()
+        && !ctx->m_cycleBuffer.empty()
+        && ctx->getCycleBuffer().getFillAmt() != 0) {
         auto& readBuf = ctx->getCycleBuffer().getReadBuff();
         memcpy(out, readBuf.data(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
         ctx->getCycleBuffer().consumeCountUp();

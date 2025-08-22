@@ -33,6 +33,8 @@ struct PaInitPar {
     bool useCycleBuffer = true;
 };
 
+enum class paState : int32_t { Idle=0, Inited, Paused, Stopped, Preparing, Running };
+
 class Portaudio {
 public :
     struct paSampBuf {
@@ -69,7 +71,7 @@ public :
 
     void printInfo() const;
 
-    [[nodiscard]] bool isRunning() const         { return m_isPlaying; }
+    [[nodiscard]] bool isRunning() const         { return m_state == paState::Running; }
     [[nodiscard]] int getFramesPerBuffer() const { return m_framesPerBuffer; }
     [[nodiscard]] int getNrOutChannels() const   { return m_outputParameters.channelCount; }
     [[nodiscard]] int32_t getSampleRate() const  { return m_sampleRate; }
@@ -77,6 +79,7 @@ public :
     auto& getStreamMtx()              { return m_streamMtx; }
     auto& getStreamProcCb()      { return m_streamProcCb; }
     auto& useCycleBuf()                 { return m_useCycleBuf; }
+    auto getState()                   { return m_state; }
 
     void setSampleRate(int rate)                { m_sampleRate = rate; }
     void setFramesPerBuffer(int nrFrames)       { m_framesPerBuffer = nrFrames; }
@@ -92,12 +95,12 @@ protected:
     int                     m_sampleRate=44100;
     int                     m_framesPerBuffer=128;
     int                     m_numChannels=0;
-    bool                    m_isPlaying = false;
     bool                    m_useCycleBuf = true;
     PaInitPar               m_initPar;
     std::mutex              m_streamMtx;
     PaStreamParameters      m_inputParameters{0};
     PaStreamParameters      m_outputParameters{0};
+    paState                 m_state{};
 
     CycleBuffer<std::vector<float>> m_cycleBuffer;  /// interleaved sample order, must be a multiple of framesPerBuffer * numChannels
     std::function<void(const void*, void*, uint64_t)>   m_streamProcCb;
