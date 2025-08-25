@@ -12,11 +12,13 @@ namespace ara::av {
 class PortaudioAudioEngine : public Portaudio {
 public:
     void start() override;
-    void play(PaAudioFile& samp);
+    void playAudioFile(PaAudioFile& samp);
     void stopAudioFile(PaAudioFile& samp);
+    void fadeAudioFile(PaAudioFile& samp, fadeType ft, double duration);
     void procSampleQueue();
     PaAudioFile& loadAudioFile(const std::filesystem::path& p);
     PaAudioFile& loadAudioAsset(const std::filesystem::path& p);
+    void addToAudioCbQueue(const std::function<void()>& f) { std::unique_lock<std::mutex> l(m_cbQueueMtx); m_audioCbQueue.emplace_back(f); }
 
 private:
     void addAudioFileAtPos(PaAudioFile& af);
@@ -26,7 +28,9 @@ private:
     std::list<PaAudioFile*>                 m_samplePlayQueue{};
     std::list<PaAudioFile>                  m_audioFiles{};
     std::mutex                              m_queueMtx;
+    std::mutex                              m_cbQueueMtx;
     std::thread                             m_procQueueThread;
+    std::list<std::function<void()>>        m_audioCbQueue;
 };
 
 }

@@ -11,6 +11,7 @@ namespace ara::av {
 
 PaAudioFile::PaAudioFile(const AudioFileLoadPar& p) {
     load(p);
+    m_volume.setVal(1.f);
 }
 
 void PaAudioFile::load(const AudioFileLoadPar& p) {
@@ -35,6 +36,7 @@ void PaAudioFile::load(const AudioFileLoadPar& p) {
 }
 
 float PaAudioFile::consume(int32_t frame, int32_t chan, int32_t sampleRate) {
+    m_volume.update();
     if (m_audioFile->getType() == AudioFileFormat::Aiff || m_audioFile->getType() == AudioFileFormat::Wave) {
         return consumeInterpolated(frame, chan, sampleRate);
     } else if (m_audioFile->getType() == AudioFileFormat::FFMpeg) {
@@ -96,6 +98,13 @@ void PaAudioFile::advancePlayHead(int32_t frames, int32_t sampleRate) {
 
 void PaAudioFile::advanceByBlock(int32_t frames, int32_t) {
     m_audioFile->advance(frames);
+}
+
+void PaAudioFile::fade(fadeType tp, double dur, const std::function<void()>& endFunc) {
+    if (endFunc) {
+        m_volume.setEndFunc(endFunc);
+    }
+    m_volume.start(tp == fadeType::in ? 0.f : 1.f, tp == fadeType::in ? 1.f : 0.f, dur, false);
 }
 
 }
