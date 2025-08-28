@@ -39,6 +39,11 @@ ShaderCollector     shCol;
 unique_ptr<Quad>    quad;
 FFMpegPlayer        fpl;
 bool                glInited = false;
+CycleBuffer<GLuint> pbos;
+size_t 		        num_pbos=4;
+int 				m_nbytes{}; // number of bytes in the pbo m_buffer.
+GLenum 				glDownloadFmt{};
+ffmpeg::RecFrame    downFrame{};
 
 static void openInputFile(const char *filename) {
     int ret;
@@ -562,6 +567,43 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     fpl.getFramesCycleBuf().feedCountUp();
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
+
+    glDownloadFmt = ffmpeg::getGlColorFormatFromAVPixelFormat(ctx->pix_fmt);
+    auto glNrBytesPerPixel = ffmpeg::getNumBytesPerPix(glDownloadFmt);
+    m_nbytes = decPar.destWidth * decPar.destHeight * glNrBytesPerPixel;
+    pbos.allocate(num_pbos);
+    glGenBuffers(static_cast<GLsizei>(num_pbos), pbos.getBuffer().data());
+    for (auto &it: pbos.getBuffer()) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, it);
+        glBufferData(GL_PIXEL_PACK_BUFFER, m_nbytes, nullptr, GL_STREAM_READ);
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+    downFrame.buffer.resize(m_nbytes);
+    downFrame.encTime = -1.0;
+}
+
+static void downloadFb(AVFrame* frame) {
+    if (pbos.getFillAmt() > 0) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos.getReadBuff());
+        auto ptr = static_cast<uint8_t *>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
+        if (ptr) {
+            memcpy(downFrame.buffer.data(), ptr, m_nbytes);
+            downFrame.bufferPtr = downFrame.buffer.data();
+            glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+        } else {
+            LOGE << "Failed to map the m_buffer";
+        }
+        pbos.consumeCountUp();
+    }
+
+    // write pbo with actual data
+    if (!pbos.isFilled()) {
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos.getWriteBuff());
+        glReadPixels(0, 0, frame->width, frame->height, glDownloadFmt, GL_UNSIGNED_BYTE, nullptr);
+        pbos.feedCountUp();
+    }
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 }
 
 static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
@@ -584,14 +626,8 @@ static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
     quad->draw();
 
     frame->pts = pts;
-
-    /*
-    glReadBuffer(GL_FRONT);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    //glReadPixels(0, 0, frame->width, frame->height, GL_BGRA, GL_UNSIGNED_BYTE, frame->data);  // synchronous, blo
-*/
     glfwSwapBuffers(window);
+    downloadFb(frame);
 }
 
 int main(int argc, char **argv) {
