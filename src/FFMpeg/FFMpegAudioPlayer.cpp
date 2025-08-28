@@ -124,7 +124,7 @@ void FFMpegAudioPlayer::recvAudioPacket(audioCbData& data) {
     m_lastPtss[toType(streamType::audio)] = data.ptss;
 }
 
-void FFMpegAudioPlayer::allocateResources(ffmpeg::DecodePar& p) {
+void FFMpegAudioPlayer::allocateResources(const DecodePar& p) {
     FFMpegDecode::allocateResources(p);
 }
 

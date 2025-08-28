@@ -1,6 +1,15 @@
 #include <FFMpeg/FFMpegCommon.h>
+#include <WindowManagement/GLFWWindow.h>
+#include <GeoPrimitives/Quad.h>
+#include <GLBase.h>
+#include <StopWatch.h>
+
+#include "Asset/AssetImageBase.h"
+#include "FFMpeg/FFMpegPlayer.h"
 
 using namespace std;
+using namespace ara;
+using namespace ara::av;
 
 static AVFormatContext *ifmt_ctx;
 static AVFormatContext *ofmt_ctx;
@@ -22,7 +31,16 @@ typedef struct StreamContext {
 } StreamContext;
 static StreamContext *stream_ctx;
 
-static void open_input_file(const char *filename) {
+GLBase              glbase;
+StopWatch           fpsWatch;
+StopWatch           decodeWatch;
+GLFWwindow*		    window = nullptr;
+ShaderCollector     shCol;
+unique_ptr<Quad>    quad;
+FFMpegPlayer        fpl;
+bool                glInited = false;
+
+static void openInputFile(const char *filename) {
     int ret;
 
     ifmt_ctx = nullptr;
@@ -79,7 +97,7 @@ static void open_input_file(const char *filename) {
     av_dump_format(ifmt_ctx, 0, filename, 0);
 }
 
-static void open_output_file(const char *filename) {
+static void openOutputFile(const char *filename) {
     int ret;
 
     ofmt_ctx = nullptr;
@@ -124,7 +142,6 @@ static void open_output_file(const char *filename) {
                     enc_ctx->pix_fmt = decCtx->pix_fmt;
                 /* video time_base can be set to whatever is handy and supported by encoder */
                 enc_ctx->time_base = av_inv_q(decCtx->framerate);
-                printf("enc_ctx->time_base %d / %d \n", enc_ctx->time_base.den, enc_ctx->time_base.num);
             } else {
                 enc_ctx->sample_rate = decCtx->sample_rate;
                 ret = av_channel_layout_copy(&enc_ctx->ch_layout, &decCtx->ch_layout);
@@ -183,8 +200,7 @@ static void open_output_file(const char *filename) {
     av_dump_format(ofmt_ctx, 0, filename, 1);
 }
 
-static int init_filter(FilteringContext* fctx, AVCodecContext *dec_ctx,
-        AVCodecContext *enc_ctx, const char *filter_spec) {
+static int initFilter(FilteringContext* fctx, AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, const char *filter_spec) {
     char args[512];
     int ret = 0;
     const AVFilter *buffersrc = nullptr;
@@ -216,15 +232,13 @@ static int init_filter(FilteringContext* fctx, AVCodecContext *dec_ctx,
                 dec_ctx->sample_aspect_ratio.num,
                 dec_ctx->sample_aspect_ratio.den);
 
-        ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in",
-                args, nullptr, filter_graph);
+        ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", args, nullptr, filter_graph);
         if (ret < 0) {
             av_log(nullptr, AV_LOG_ERROR, "Cannot create buffer source\n");
             goto end;
         }
 
-        ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out",
-                nullptr, nullptr, filter_graph);
+        ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", nullptr, nullptr, filter_graph);
         if (ret < 0) {
             av_log(nullptr, AV_LOG_ERROR, "Cannot create buffer sink\n");
             goto end;
@@ -313,8 +327,7 @@ static int init_filter(FilteringContext* fctx, AVCodecContext *dec_ctx,
         goto end;
     }
 
-    if ((ret = avfilter_graph_parse_ptr(filter_graph, filter_spec,
-                    &inputs, &outputs, nullptr)) < 0) {
+    if ((ret = avfilter_graph_parse_ptr(filter_graph, filter_spec, &inputs, &outputs, nullptr)) < 0) {
         goto end;
     }
 
@@ -334,7 +347,7 @@ end:
     return ret;
 }
 
-static int init_filters() {
+static int initFilters() {
     const char *filter_spec;
     filter_ctx = static_cast<FilteringContext*>(av_malloc_array(ifmt_ctx->nb_streams, sizeof(*filter_ctx)));
     if (!filter_ctx) {
@@ -357,7 +370,7 @@ static int init_filters() {
             filter_spec = "anull"; // passthrough (dummy) filter for audio
         }
 
-        if (int ret = init_filter(&filter_ctx[i], stream_ctx[i].dec_ctx, stream_ctx[i].enc_ctx, filter_spec)) {
+        if (int ret = initFilter(&filter_ctx[i], stream_ctx[i].dec_ctx, stream_ctx[i].enc_ctx, filter_spec)) {
             return ret;
         }
 
@@ -375,7 +388,7 @@ static int init_filters() {
     return 0;
 }
 
-static int encode_write_frame(unsigned int stream_index, int flush) {
+static int encodeWriteFrame(unsigned int stream_index, int flush) {
     const auto stream = &stream_ctx[stream_index];
     const auto filter = &filter_ctx[stream_index];
     auto filt_frame = flush ? nullptr : filter->filtered_frame;
@@ -412,7 +425,7 @@ static int encode_write_frame(unsigned int stream_index, int flush) {
     return ret;
 }
 
-static int filter_encode_write_frame(AVFrame *frame, unsigned int stream_index) {
+static int filterEncodeWriteFrame(AVFrame *frame, unsigned int stream_index) {
     auto filter = &filter_ctx[stream_index];
 
     // push the decoded frame into the filtergraph
@@ -437,7 +450,7 @@ static int filter_encode_write_frame(AVFrame *frame, unsigned int stream_index) 
 
         filter->filtered_frame->time_base = av_buffersink_get_time_base(filter->buffersink_ctx);;
         filter->filtered_frame->pict_type = AV_PICTURE_TYPE_NONE;
-        ret = encode_write_frame(stream_index, 0);
+        ret = encodeWriteFrame(stream_index, 0);
         av_frame_unref(filter->filtered_frame);
         if (ret < 0) {
             break;
@@ -447,14 +460,14 @@ static int filter_encode_write_frame(AVFrame *frame, unsigned int stream_index) 
     return ret;
 }
 
-static int flush_encoder(unsigned int stream_index) {
+static int flushEncoder(unsigned int stream_index) {
     if (!(stream_ctx[stream_index].enc_ctx->codec->capabilities & AV_CODEC_CAP_DELAY)) {
         return 0;
     }
-    return encode_write_frame(stream_index, 1);
+    return encodeWriteFrame(stream_index, 1);
 }
 
-static int cleanup(AVPacket* packet, int ret) {
+static int cleanUp(AVPacket* packet, int ret) {
     av_packet_free(&packet);
     for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
         avcodec_free_context(&stream_ctx[i].dec_ctx);
@@ -487,7 +500,103 @@ static int cleanup(AVPacket* packet, int ret) {
     return ret ? 1 : 0;
 }
 
+static void output_error(int error, const char* msg) {
+    LOGE << "Error:" << std::string(msg);
+}
+
+static void initGlfw(AVFrame* frame) {
+    glfwSetErrorCallback(output_error);
+    if (!glfwInit()) {
+        LOGE << "Failed to initialize GLFW";
+    }
+    glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+    glfwWindowHint(GLFW_DECORATED, GL_TRUE);
+
+#ifdef __APPLE__
+    glfwWindowHint(GLFW_SCALE_TO_MONITOR, GL_TRUE); // if GL_FALSE pixel sizing is 1:1 if GL_TRUE the required size will be different from the resulting window size
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // uncomment this statement to fix compilation on OS X
+#endif
+
+    window = glfwCreateWindow(frame->width, frame->height, "FFMpeg Re-encode Test", nullptr, nullptr);
+    if (!window) {
+        LOGE << "Failed to create GLFW window";
+        glfwTerminate();
+    }
+
+    glfwWindowHint(GLFW_SAMPLES, 2);
+    glfwWindowHint(GLFW_DOUBLEBUFFER, GL_TRUE);
+    glfwSetWindowPos(window, 0, 0);
+    glfwShowWindow(window);
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(0); // run as fast as possible
+
+    LOG << "Vendor:   " << glGetString(GL_VENDOR);
+    LOG << "Renderer: " << glGetString(GL_RENDERER);
+    LOG << "Version:  " << glGetString(GL_VERSION);
+    LOG << "GLSL:     " << glGetString(GL_SHADING_LANGUAGE_VERSION);
+}
+
+static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
+    initGlfw(frame);
+    initGLEW();
+    glbase.init(false);
+    glfwMakeContextCurrent(window);
+    glViewport(0, 0, frame->width, frame->height);
+
+    auto& decPar = fpl.getPar();
+    decPar.destWidth = frame->width;
+    decPar.destHeight = frame->height;
+    decPar.decodeYuv420OnGpu = true;
+    decPar.glbase = &glbase;
+
+    fpl.setShaderCollector(&glbase.shaderCollector());
+    fpl.setVideoContext(ctx);
+    fpl.allocateResources(decPar);
+    fpl.getSrcWidth() = frame->width;
+    fpl.getSrcHeight() = frame->height;
+    fpl.setSrcPixFmt(ctx->pix_fmt);
+    fpl.setRunning(true);
+    fpl.getFramesCycleBuf().feedCountUp();
+
+    quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
+}
+
+static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
+    if (!glInited) {
+        glResInit(frame, ctx);
+        glInited = true;
+    }
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    auto pts = frame->pts;
+
+    auto& cb = fpl.getFramesCycleBuf();
+    cb.feedCountUp();
+    cb.getReadBuff().frame = frame;
+    fpl.loadFrameToTexture(0.0, true);
+
+    fpl.shaderBegin(); // draw with conversion yuv -> rgb on gpu
+    quad->draw();
+
+    frame->pts = pts;
+
+    /*
+    glReadBuffer(GL_FRONT);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    //glReadPixels(0, 0, frame->width, frame->height, GL_BGRA, GL_UNSIGNED_BYTE, frame->data);  // synchronous, blo
+*/
+    glfwSwapBuffers(window);
+}
+
 int main(int argc, char **argv) {
+    decodeWatch.setStart();
+
     int ret = 0;
 
     if (argc != 3) {
@@ -498,10 +607,10 @@ int main(int argc, char **argv) {
     AVPacket *packet = nullptr;
     try {
         unsigned int stream_index{};
-        open_input_file(argv[1]);
-        open_output_file(argv[2]);
+        openInputFile(argv[1]);
+        openOutputFile(argv[2]);
 
-        if ((ret = init_filters()) < 0) {
+        if ((ret = initFilters()) < 0) {
             throw std::runtime_error("init_filters failed");
         }
         if (!((packet = av_packet_alloc()))) {
@@ -520,7 +629,7 @@ int main(int argc, char **argv) {
             if (filter_ctx[stream_index].filter_graph) {
                 auto stream = &stream_ctx[stream_index];
 
-                av_log(nullptr, AV_LOG_DEBUG, "Going to reencode&filter the frame\n");
+                av_log(nullptr, AV_LOG_DEBUG, "Going to reencode & filter the frame\n");
 
                 ret = avcodec_send_packet(stream->dec_ctx, packet);
                 if (ret < 0) {
@@ -538,7 +647,11 @@ int main(int argc, char **argv) {
                     }
 
                     stream->dec_frame->pts = stream->dec_frame->best_effort_timestamp;
-                    ret = filter_encode_write_frame(stream->dec_frame, stream_index);
+                    if (stream->dec_frame->width && stream->dec_frame->height) {
+                        drawOnTop(stream->dec_frame, stream->dec_ctx);
+                    }
+
+                    ret = filterEncodeWriteFrame(stream->dec_frame, stream_index);
                     if (ret < 0){
                         throw runtime_error("filter_encode_write_frame returned error");
                     }
@@ -582,20 +695,20 @@ int main(int argc, char **argv) {
                 }
 
                 stream->dec_frame->pts = stream->dec_frame->best_effort_timestamp;
-                ret = filter_encode_write_frame(stream->dec_frame, i);
+                ret = filterEncodeWriteFrame(stream->dec_frame, i);
                 if (ret < 0){
                     throw runtime_error("filter_encode_write_frame returned error");
                 }
             }
 
             // flush filter
-            ret = filter_encode_write_frame(nullptr, i);
+            ret = filterEncodeWriteFrame(nullptr, i);
             if (ret < 0) {
                 throw runtime_error("Flushing filter failed");
             }
 
             // flush encoder
-            ret = flush_encoder(i);
+            ret = flushEncoder(i);
             if (ret < 0) {
                 throw runtime_error("Flushing encoder failed\n");
             }
@@ -604,7 +717,13 @@ int main(int argc, char **argv) {
         av_write_trailer(ofmt_ctx);
     } catch (runtime_error& e) {
         LOGE << e.what();
-        cleanup(packet, ret);
     }
 
+    cleanUp(packet, ret);
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    decodeWatch.setEnd();
+    LOG << "bombich! decode took: " << decodeWatch.getDt() << " ms";
 }

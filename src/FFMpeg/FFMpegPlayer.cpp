@@ -30,7 +30,7 @@ void FFMpegPlayer::openCamera(const ffmpeg::DecodePar& p) {
     FFMpegDecode::openCamera(p);
 }
 
-void FFMpegPlayer::allocateResources(ffmpeg::DecodePar& p) {
+void FFMpegPlayer::allocateResources(const ffmpeg::DecodePar& p) {
     FFMpegAudioPlayer::allocateResources(p);
 
     if (m_videoCodecCtx) {

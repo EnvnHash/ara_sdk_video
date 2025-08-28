@@ -26,8 +26,11 @@ public:
     GLuint      getTexU() { if (m_textures.size() > 1 && m_textures[1].isAllocated()) return m_textures[1].getId(); else return 0; }
     GLuint      getTexV() { if (m_textures.size() > 2 && m_textures[2].isAllocated()) return m_textures[2].getId(); else return 0; }
 
+    void setShaderCollector(ShaderCollector* shCol) { m_shCol = shCol; }
+    void setVideoContext(AVCodecContext* ctx) { m_videoCodecCtx = ctx; }
+    void allocateResources(const ffmpeg::DecodePar& p) override;
+
 private:
-    void allocateResources(ffmpeg::DecodePar& p) override;
     void allocGlRes(AVPixelFormat srcPixFmt);
     void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
     bool calcFrameToUpload(double& actRelTime, double time, bool monotonic);

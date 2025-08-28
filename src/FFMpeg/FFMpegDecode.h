@@ -49,6 +49,8 @@ public:
     void setVideoUpdtCb(const std::function<void(AVFrame*)>& cbFunc) { m_videoCb = cbFunc; }
     void setVideoDecoderCb(const std::function<void(uint8_t*)>& cbFunc) { m_decodeCb = cbFunc; }
     void setVideoFrameBufferSize(int size) { m_videoFrameBufferSize = size; }
+    void setRunning(bool val) { m_run = val; }
+    void setSrcPixFmt(AVPixelFormat fmt) { m_srcPixFmt = fmt; }
 
     virtual void        clearResources();
     bool                decodeYuv420OnGpu() const { return m_par.decodeYuv420OnGpu; }
@@ -65,13 +67,15 @@ public:
     auto                getVideoFrameBufferSize() const { return m_videoFrameBufferSize; }
     auto                getWriteFramePtr() { return m_frames.getWritePos(); } // m_frames write buff
     auto                getReadFramePtr() { return m_frames.getReadPos(); }
-    auto                getFrameRateD() { return m_formatContext->streams[toType(ffmpeg::streamType::video)]->r_frame_rate.den; }
-    auto                getFrameRateN() { return m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]]->r_frame_rate.num; }
+    auto&               getFramesCycleBuf() { return m_frames; }
     [[nodiscard]] auto	getBitCount() const { return m_bitCount; }
     [[nodiscard]] auto&	getDecodeCond() { return m_decodeCond; }
     [[nodiscard]] auto&	getDecoderCtx() { return m_videoCodecCtx; }
-    [[nodiscard]] auto&	getPar() const { return m_par; }
+    [[nodiscard]] auto&	getPar()  { return m_par; }
+    [[nodiscard]] auto&	getSrcWidth() { return m_srcWidth; }
+    [[nodiscard]] auto&	getSrcHeight()  { return m_srcHeight; }
     auto&               getEndThreadCond() { return m_endThreadCond; }
+    virtual void        allocateResources(const ffmpeg::DecodePar& p);
 
 protected:
     void            setupHwDecoding();
@@ -86,7 +90,6 @@ protected:
     void            parseSeeking();
     virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
-    virtual void    allocateResources(ffmpeg::DecodePar& p);
     void            singleThreadDecodeLoop();
     int             decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);

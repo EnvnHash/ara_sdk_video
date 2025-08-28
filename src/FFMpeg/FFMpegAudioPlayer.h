@@ -28,7 +28,7 @@ protected:
     void setCallbackAndConverter(bool useConverter, int32_t sampleRate, AVSampleFormat fmt);
     void procBufSizeFact(audioCbData& data);
     virtual void recvAudioPacket(audioCbData& data);
-    void allocateResources(ffmpeg::DecodePar& p) override;
+    void allocateResources(const ffmpeg::DecodePar& p) override;
     void clearResources() override;
 
     Portaudio               m_paudio;

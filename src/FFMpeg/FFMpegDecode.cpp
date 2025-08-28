@@ -391,7 +391,7 @@ void FFMpegDecode::parseSeeking() {
     }
 }
 
-void FFMpegDecode::allocateResources(DecodePar& p) {
+void FFMpegDecode::allocateResources(const DecodePar& p) {
     m_packet = av_packet_alloc();
     if (!m_packet) {
         throw runtime_error("failed to allocated memory for AVPacket");
