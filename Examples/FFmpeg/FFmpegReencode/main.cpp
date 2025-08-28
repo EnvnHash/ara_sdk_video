@@ -50,12 +50,14 @@ static void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    decoder.loadFrameToTexture(0.0, true);
+    auto pts = decoder.loadFrameToTexture(0.0, true);
     decoder.shaderBegin(); // draw with conversion yuv -> rgb on gpu
     quad->draw();
     glfwSwapBuffers(window);
 
-    encoder.downloadGlFbToVideoFrame(static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)), nullptr, true);
+    encoder.downloadGlFbToVideoFrame(static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)), nullptr, true, pts);
+
+    // consume audio from list until pts
 
     if (decoder.getPaudio().isRunning()){
         // fake audio consume
@@ -118,7 +120,6 @@ int main(int, char**) {
         .loop = false,
         .endCb = [&] { run = false; }
     });
-    decoder.start(glfwGetTime());
 
     glfwSetWindowSize(window, decoder.getPar().destWidth, decoder.getPar().destHeight);
     glViewport(0, 0, decoder.getPar().destWidth, decoder.getPar().destHeight);
@@ -126,14 +127,17 @@ int main(int, char**) {
     encoder.init({
         .filePath = "trailer_1080p_transc.mov",
         .pixelFormat = AV_PIX_FMT_BGRA,
-        .width = decoder.getPar().destWidth,
-        .height = decoder.getPar().destHeight,
-        .fps = static_cast<int32_t>(decoder.getFps(ffmpeg::streamType::video)),
-        .videoBitRate = 1048576 *7,
-        .useHwAccel = true
+        .useHwAccel = false,
+        .fromDecoder = &decoder
     });
-    encoder.record();
+    encoder.record(glfwGetTime());
 
+    /*
+    // overwrite standard audio updt cb
+    decoder.setAudioUpdtCb([](audioCbData& ad) {
+       // LOG << "callback data " << ad.packet->pts;
+    });
+*/
     init();
 
     while (run && !glfwWindowShouldClose(window)) {

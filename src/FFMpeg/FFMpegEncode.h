@@ -19,6 +19,7 @@ public:
     struct OutputStream {
         AVStream *st{};
         AVCodecContext *enc{};
+        const AVCodec* codec{};
 
         int64_t next_pts{}; // pts of the next m_frame that will be generated
         int32_t samples_count{};
@@ -37,19 +38,20 @@ public:
     virtual ~FFMpegEncode() = default;
 
     bool init(const ffmpeg::EncodePar& par);
-    bool record();
+    bool record(double time=0.0);
+    void openOutputFile(AVDictionary *avioOpts);
     void stop() { m_doRec = false; m_stopCond.wait(0); }
 
-    int         writeFrame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt);
-    void        addStream(FFMpegEncode::OutputStream *ost, AVFormatContext *oc, const AVCodec **codec, enum AVCodecID codec_id);
-    void        openAudio(const AVCodec *codec, FFMpegEncode::OutputStream *ost, AVDictionary *opt_arg);
+    int         writePacket(AVFormatContext *fmt_ctx, OutputStream *ost, AVPacket *pkt);
+    void        addStream(OutputStream *ost, AVFormatContext *oc);
+    void        openAudio(OutputStream *ost, AVDictionary *opt_arg);
     AVFrame*    getAudioFrame(OutputStream *ost, bool clear);
     int         writeAudioFrame(AVFormatContext *oc, OutputStream *ost, bool clear);
-    void        openVideo(const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg);
+    void        openVideo(OutputStream *ost, AVDictionary *opt_arg);
     int         writeVideoFrame(AVFormatContext *oc, OutputStream *ost);
     void        closeStream(AVFormatContext *oc, OutputStream *ost);
 
-    void        downloadGlFbToVideoFrame(double fixFps=0.0, unsigned char* bufPtr=nullptr, bool monotonic = false);
+    void        downloadGlFbToVideoFrame(double fixFps=0.0, unsigned char* bufPtr=nullptr, bool monotonic=false, int64_t pts=-1);
     void        freeGlResources();
 
     [[nodiscard]] bool isRecording() const          { return m_doRec; }
@@ -58,10 +60,16 @@ public:
     void setBufOvrCb(std::function<void(bool)> f)   { m_bufOvrCb = std::move(f); }
 
 protected:
+    void            setupHardwareContext();
+    void            checkRtmpRequested(AVDictionary *avioOpts);
+    void            allocFormatCtx();
+    void            addStreams();
+    void            openStreams();
     virtual void    recThread();
+    void            cleanUp();
     int             setHwframeCtx(AVCodecContext *ctx, AVBufferRef *hw_device_ctx);
     void            savePngSeq();
-    void            setVideoCodePar(OutputStream *ost, AVCodecContext *context, enum AVCodecID codec_id);
+    void            setVideoCodePar(OutputStream *ost);
 
 #ifdef WITH_AUDIO
     PAudio* 				pa;
@@ -73,16 +81,16 @@ protected:
     AVDictionary*			        m_opt=nullptr;
     const AVOutputFormat*		    m_fmt=nullptr;
     AVFormatContext*		        m_oc=nullptr;
-    AVCodecContext*                 m_encCodecCtx=nullptr;
-    std::array<const AVCodec*, 2>	m_codec{};
     AVBufferRef*                    m_hw_device_ctx=nullptr;
     AVPixelFormat                   m_hwPixFmt=(AVPixelFormat)0;
     AVPixelFormat                   m_hwSwFmt=(AVPixelFormat)0;
-    AVFrame*                        m_encFrame=nullptr;
     AVFrame*                        m_frameBGRA=nullptr;
     AVFilterContext*		        m_buffersink_ctx=nullptr;
     AVFilterContext*		        m_buffersrc_ctx=nullptr;
     SwsContext*				        m_converter=nullptr;	// muss unbedingt auf NULL initialisiert werden!!!
+
+    int64_t m_lastPts{};
+    int64_t m_lastPktPts{};
 
     uint8_t**				    m_src_samples_data=nullptr;
     int       				    m_src_samples_linesize{};

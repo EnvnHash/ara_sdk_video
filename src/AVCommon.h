@@ -6,6 +6,8 @@
 
 #include <util_common.h>
 
+struct AVPacket;
+
 namespace ara::av {
 
 class audioCbData {
@@ -17,6 +19,7 @@ public:
     uint32_t sampleRate=0;
     int32_t sampleFmt=0;
     double ptss=0;
+    AVPacket* packet=nullptr;
 };
 
 }

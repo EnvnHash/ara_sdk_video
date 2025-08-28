@@ -19,7 +19,7 @@ public:
     void openFile(const ffmpeg::DecodePar& p) override;
     void openCamera(const ffmpeg::DecodePar& p) override;
     void shaderBegin();
-    void loadFrameToTexture(double time, bool monotonic=false);
+    int64_t loadFrameToTexture(double time, bool monotonic=false);
 
     Shaders*    getShader() { return m_shader; }
     GLuint      getTex() {  if (!m_textures.empty() && m_textures[0].isAllocated()) return m_textures[0].getId(); else return 0; }

@@ -62,7 +62,7 @@ void init() {
 
     player.openFile({
         .glbase = &glbase,
-        .filePath = "trailer_1080p.mov",
+        .filePath = "video_test.mp4",
         .destWidth = winWidth,
         .destHeight = winHeight
     });

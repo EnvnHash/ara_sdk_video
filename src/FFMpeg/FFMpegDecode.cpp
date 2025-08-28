@@ -193,8 +193,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
         av_dict_set(&m_formatOpts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE);
     }
 
-    AVDictionaryEntry *t{};
-    if ((t = av_dict_get(m_formatOpts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
+    if (AVDictionaryEntry *t{}; (t = av_dict_get(m_formatOpts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
         throw runtime_error("Option "+std::string(t->key)+" not found.");
     }
     if (m_genpts) {
@@ -218,8 +217,9 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
     }
 
     // the component that knows how to enCOde and DECode the stream, it's the codec (audio or video) http://ffmpeg.org/doxygen/trunk/structAVCodec.html
-    m_streamIndex[toType(streamType::video)] = -1;
-    m_streamIndex[toType(streamType::audio)] = -1;
+    for (auto i=0; i<toType(streamType::size); ++i) {
+        m_streamIndex[i] = -1;
+    }
 
     // loop though all the streams and print its main information
     for (auto i = 0; i < m_formatContext->nb_streams; ++i) {
@@ -285,6 +285,7 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
 
     m_videoCodecCtx->pkt_timebase = m_formatContext->streams[i]->time_base;
     m_videoCodecCtx->codec_id = video_codec->id;
+    m_videoCodecCtx->framerate = av_guess_frame_rate(m_formatContext, m_formatContext->streams[i], nullptr);
 
     if (m_par.useHwAccel) {
         m_videoCodecCtx->get_format = getHwFormat;
@@ -367,9 +368,8 @@ void FFMpegDecode::initStreamInfo() {
     // the arguments are: the AVFormatContext and options contains options for codec corresponding to i-th stream.
     // On return each dictionary will be filled with options that were not found.
     auto opts = setupFindStreamInfoOpts(m_formatContext, m_codecOpts);
-    auto origNumStreams = static_cast<int32_t>(m_formatContext->nb_streams);
     auto err = avformat_find_stream_info(m_formatContext, opts);
-    for (auto i = 0; i < origNumStreams; ++i) {
+    for (auto i = 0; i < static_cast<int32_t>(m_formatContext->nb_streams); ++i) {
         av_dict_free(&opts[i]);
     }
     av_freep(&opts);
@@ -490,7 +490,7 @@ int32_t FFMpegDecode::decodeVideoPacket(AVPacket* packet, AVCodecContext* codecC
             // in case the queue is filled, don't read more frames
             while (m_frames.getFreeSpace() == 0) {
                 this_thread::sleep_for(500us);
-           }
+            }
             response = parseReceivedFrame(codecContext);
         }
     }
@@ -657,6 +657,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
             }
 
             m_audioCbData.ptss = m_timeBaseDiv[toType(streamType::audio)] * static_cast<double>(m_audioFrame->pts);
+            m_audioCbData.packet = packet;
 
             if (m_audioCb) {
                 m_audioCb(m_audioCbData);

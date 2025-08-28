@@ -200,7 +200,9 @@ void FFMpegPlayer::shaderBegin() {
     }
 }
 
-void FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
+int64_t FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
+    int64_t framePts{};
+
     if (m_resourcesAllocated && m_run && !m_pause && m_frames.getFillAmt() > 0) {
         m_actRelTime = getActRelTime(time);
 
@@ -233,6 +235,7 @@ void FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
             }
 
             // mark as consumed
+            framePts = m_frames.getReadBuff().frame->pts;
             m_lastReadPtss = m_frames.getReadBuff().ptss;
             m_frames.getReadBuff().frame->pts = -1;
             m_frames.consumeCountUp();
@@ -240,6 +243,8 @@ void FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
             m_lastToGlTime = time;
         }
     }
+
+    return framePts;
 }
 
 bool FFMpegPlayer::calcFrameToUpload(double& actRelTime, double time, bool monotonic) {
