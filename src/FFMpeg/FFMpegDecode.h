@@ -52,9 +52,13 @@ public:
 
     virtual void        clearResources();
     bool                decodeYuv420OnGpu() const { return m_par.decodeYuv420OnGpu; }
-    double  		getDurationSec(ffmpeg::streamType);
-    double 		getFps(ffmpeg::streamType);
-    int64_t 		getTotalFrames(ffmpeg::streamType);
+    AVStream*           getStream(ffmpeg::streamType) {
+        return m_formatContext ? m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]] : nullptr;
+    }
+
+    double  		    getDurationSec(ffmpeg::streamType);
+    double 		        getFps(ffmpeg::streamType);
+    int64_t 		    getTotalFrames(ffmpeg::streamType);
     [[nodiscard]] auto  getSrcPixFmt() const { return m_srcPixFmt; }
     [[nodiscard]] auto  getNrBufferedFrames() { return m_frames.getFillAmt(); }
     auto                getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
@@ -65,6 +69,7 @@ public:
     auto                getFrameRateN() { return m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]]->r_frame_rate.num; }
     [[nodiscard]] auto	getBitCount() const { return m_bitCount; }
     [[nodiscard]] auto&	getDecodeCond() { return m_decodeCond; }
+    [[nodiscard]] auto&	getDecoderCtx() { return m_videoCodecCtx; }
     [[nodiscard]] auto&	getPar() const { return m_par; }
     auto&               getEndThreadCond() { return m_endThreadCond; }
 
@@ -93,39 +98,39 @@ protected:
     int             decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
     void            onEndOfFile(ffmpeg::streamType t);
 
-    ffmpeg::DecodePar                   m_par;
-    ffmpeg::CustomIOContext             m_ioCtx;
+    ffmpeg::DecodePar           m_par;
+    ffmpeg::CustomIOContext     m_ioCtx;
     const AVCodec*      		m_audioCodec=nullptr;
-    AVCodecContext*			m_videoCodecCtx=nullptr;
-    AVCodecContext*                     m_audioCodecCtx=nullptr;
+    AVCodecContext*			    m_videoCodecCtx=nullptr;
+    AVCodecContext*             m_audioCodecCtx=nullptr;
     AVFormatContext*			m_formatContext=nullptr;
-    AVDictionary*                       m_formatOpts=nullptr;
-    AVDictionary*                       m_codecOpts=nullptr;
+    AVDictionary*               m_formatOpts=nullptr;
+    AVDictionary*               m_codecOpts=nullptr;
 
-    AVFrame*				m_frame = nullptr;
-    AVFrame*				m_audioFrame = nullptr;
+    AVFrame*				            m_frame = nullptr;
+    AVFrame*				            m_audioFrame = nullptr;
     CycleBuffer<ffmpeg::TimedFrame>     m_frames;
     CycleBuffer<ffmpeg::TimedPicture>   m_bgraFrame;
-    AVPacket*				m_packet=nullptr;
-    struct SwsContext*			m_imgConvertCtx=nullptr;
+    AVPacket*				            m_packet=nullptr;
+    struct SwsContext*			        m_imgConvertCtx=nullptr;
 
-    enum AVHWDeviceType 		m_hwDeviceType{};
-    AVBufferRef*			m_hwDeviceCtx = nullptr;
-    AVChannelLayout                     m_dstChannelLayout{ .order = AV_CHANNEL_ORDER_NATIVE, .nb_channels = 1};
-    enum AVSampleFormat                 m_dstSampleFmt{};
-    struct SwrContext*                  m_audioSwrCtx=nullptr;
+    enum AVHWDeviceType m_hwDeviceType{};
+    AVBufferRef*		m_hwDeviceCtx = nullptr;
+    AVChannelLayout     m_dstChannelLayout{ .order = AV_CHANNEL_ORDER_NATIVE, .nb_channels = 1};
+    enum AVSampleFormat m_dstSampleFmt{};
+    struct SwrContext*  m_audioSwrCtx=nullptr;
 
-    const char*                         m_videoCodecName = nullptr;
-    std::string                         m_defaultHwDevType;
+    const char* m_videoCodecName = nullptr;
+    std::string m_defaultHwDevType;
 
-    AVCodecID				m_forceAudioCodec{};
-    std::thread				m_decodeThread;
-    std::mutex				m_mutex;
-    Conditional 	                m_decodeCond;
-    Conditional 	                m_endThreadCond;
+    AVCodecID	m_forceAudioCodec{};
+    std::thread	m_decodeThread;
+    std::mutex	m_mutex;
+    Conditional m_decodeCond;
+    Conditional m_endThreadCond;
 
-    std::function<void()>		m_firstVideoFrameCb;
-    std::function<void()>		m_firstAudioFrameCb;
+    std::function<void()>		        m_firstVideoFrameCb;
+    std::function<void()>		        m_firstAudioFrameCb;
     std::function<void(audioCbData&)>	m_audioCb;
     std::function<void(AVFrame*)>       m_videoCb;
     std::function<void(uint8_t*)>       m_decodeCb;
@@ -180,7 +185,7 @@ protected:
     std::array<double, 2>   m_streamDuration{}; // should be the same
     std::array<double, 2>   m_lastPtss{-1.0, -1.0};
     std::array<uint32_t, 2> m_totNumFrames{};
-    int 		    m_frameToUpload=-1;
+    int 		            m_frameToUpload=-1;
 
     std::vector<uint8_t>        m_memInputBuf;
     size_t                      m_avioCtxBufferSize=4096;

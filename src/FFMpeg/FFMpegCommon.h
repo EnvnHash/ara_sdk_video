@@ -70,6 +70,7 @@ namespace ara {
     class GLBase;
     namespace av {
         class PortaudioAudioEngine;
+        class FFMpegDecode;
     };
 }
 
@@ -122,6 +123,7 @@ struct EncodePar {
     int32_t         videoBitRate{4194304};
     int32_t         audioBitRate{128000};
     bool            useHwAccel = true;
+    FFMpegDecode*   fromDecoder = nullptr;
 };
 
 static std::string m_errStr;
