@@ -85,7 +85,7 @@ void init() {
                             .height = winHeight,
                             .fps = 30,
                             .videoBitRate = 1048576 *3, // 1 MBit = 1.048.576. ab 4 Mbit probleme bei rtmp streams auf windows
-                            .useHwAccel = true
+                            .useHwAccel = false
                             });
     if (ret) {
         encoder.record();

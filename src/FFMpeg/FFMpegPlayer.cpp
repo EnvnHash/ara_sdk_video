@@ -235,7 +235,7 @@ int64_t FFMpegPlayer::loadFrameToTexture(double time, bool monotonic) {
             }
 
             // mark as consumed
-            framePts = m_frames.getReadBuff().frame->pts;
+            framePts = m_frames.getReadBuff().frame->best_effort_timestamp;
             m_lastReadPtss = m_frames.getReadBuff().ptss;
             m_frames.getReadBuff().frame->pts = -1;
             m_frames.consumeCountUp();

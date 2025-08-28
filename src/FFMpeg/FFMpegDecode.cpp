@@ -534,6 +534,9 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
         m_srcPixFmt = codecContext->pix_fmt;
     }
 
+    auto frame = m_frames.getWriteBuff().frame;
+    LOG << frame->pts;
+
     if (m_videoCb) {
         m_videoCb(m_frames.getWriteBuff().frame);
     }

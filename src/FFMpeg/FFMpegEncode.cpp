@@ -71,16 +71,9 @@ bool FFMpegEncode::record(double time) {
         }
 
         allocFormatCtx();
-        m_fmt = m_oc->oformat;
-        openOutputFile(avioOpts);
         addStreams();
         openStreams();
-
-        // Write the stream header, if any. Note: This might change the streams time_base
-        if (avformat_write_header(m_oc, avioOpts ? &avioOpts : nullptr) < 0) {
-            throw runtime_error("Error occurred when opening output file: " +ffmpeg::err2str(m_ret));
-        }
-        av_dump_format(m_oc, 0, m_par.filePath.c_str(), 1);
+        openOutputFile(avioOpts);
 
 #ifdef WITH_AUDIO
         m_mixDownMap = std::vector< std::vector<unsigned int> >(m_outStream[toType(streamType::audio)].st->codecpar->channels);
@@ -238,7 +231,7 @@ void FFMpegEncode::checkRtmpRequested(AVDictionary *avioOpts) {
 }
 
 void FFMpegEncode::allocFormatCtx() {
-    avformat_alloc_output_context2(&m_oc, nullptr, m_isRtmp ? "flv" : nullptr, m_par.filePath.c_str()); //RTMP
+    avformat_alloc_output_context2(&m_oc, nullptr, m_isRtmp ? "flv" : nullptr, m_par.filePath.c_str());
     if (!m_oc) {
         LOGE << "Could not deduce output format from file extension: using MPEG.";
         avformat_alloc_output_context2(&m_oc, nullptr, "mpeg", m_par.filePath.c_str());
@@ -250,18 +243,12 @@ void FFMpegEncode::allocFormatCtx() {
 
 void FFMpegEncode::addStreams() {
     // Add the audio and video streams using the default m_format codecs and initialize the codecs.
-    if (m_fmt && m_fmt->video_codec != AV_CODEC_ID_NONE) {
-        addStream(&m_outStream[toType(streamType::video)], m_oc);
-        m_have[toType(streamType::video)] = true;
-    } else {
-        LOGE << "no video codec found";
-    }
+    addStream(&m_outStream[toType(streamType::video)], m_oc);
+    m_have[toType(streamType::video)] = true;
 
-    if (!m_noAudio && m_fmt->audio_codec != AV_CODEC_ID_NONE) {
+    if (!m_noAudio) {
         addStream(&m_outStream[toType(streamType::audio)], m_oc);
         m_have[toType(streamType::audio)] = true;
-    } else if (!m_noAudio) {
-        LOGE << "no audio codec found";
     }
 }
 
@@ -275,9 +262,10 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc) {
 
     // find the encoder
     if (!ost->codec) {
-        ost->codec = avcodec_find_encoder(m_fmt->video_codec);
+        auto codecId = m_par.fromDecoder ? m_par.fromDecoder->getDecoderCtx()->codec_id : m_oc->oformat->video_codec;
+        ost->codec = avcodec_find_encoder(codecId);
         if (!ost->codec) {
-            throw runtime_error("Could not find encoder for "+std::string(avcodec_get_name(m_fmt->video_codec)));
+            throw runtime_error("Could not find encoder for "+std::string(avcodec_get_name(codecId)));
         }
     }
 
@@ -286,18 +274,7 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc) {
         if (!ost->st) {
             throw runtime_error("Could not allocate stream");
         }
-        if (m_par.fromDecoder) {
-            /*
-            auto st = m_par.fromDecoder->getStream(streamType::video);
-            if (avcodec_parameters_copy(ost->st->codecpar, st->codecpar) < 0) {
-                throw runtime_error("Could copy parameters allocate stream");
-            }
-            ost->st->time_base = st->time_base;
-            ost->st->avg_frame_rate = st->avg_frame_rate;
-            ost->st->r_frame_rate = st->r_frame_rate;
-            */
-        }
-        ost->st->id = static_cast<int32_t>(oc->nb_streams) -1;
+        //ost->st->id = static_cast<int32_t>(oc->nb_streams) -1;
     }
 
     /*int ret = 0;
@@ -362,12 +339,18 @@ void FFMpegEncode::openStreams() {
     }
 }
 
-void FFMpegEncode::openOutputFile(AVDictionary *avioOpts) {
+void FFMpegEncode::openOutputFile(AVDictionary *avioOpts) const {
     // open the output file, if needed
-    if (!(m_fmt->flags & AVFMT_NOFILE)
+    if (!(m_oc->oformat->flags & AVFMT_NOFILE)
         && avio_open(&m_oc->pb, m_par.filePath.c_str(), AVIO_FLAG_WRITE)< 0) {
         throw runtime_error("Could not open '" +m_par.filePath +"': " +ffmpeg::err2str(m_ret));
     }
+
+    // Write the stream header, if any. Note: This might change the streams time_base
+    if (avformat_write_header(m_oc, avioOpts ? &avioOpts : nullptr) < 0) {
+        throw runtime_error("Error occurred when opening output file: " +ffmpeg::err2str(m_ret));
+    }
+    av_dump_format(m_oc, 0, m_par.filePath.c_str(), 1);
 }
 
 void FFMpegEncode::recThread() {
@@ -423,7 +406,7 @@ void FFMpegEncode::cleanUp() {
     }
 
     // Close the output file.
-    if (!(m_fmt->flags & AVFMT_NOFILE)) {
+    if (!(m_oc->oformat->flags & AVFMT_NOFILE)) {
         avio_closep(&m_oc->pb);
     }
 
@@ -486,12 +469,12 @@ void FFMpegEncode::setVideoCodePar(OutputStream *ost) {
         ost->enc->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
         // take first format from list of supported formats
 
-        /*if (ost->codec->pix_fmts) {
+        if (ost->codec->pix_fmts) {
             ost->enc->pix_fmt = ost->codec->pix_fmts[0];
         } else {
             ost->enc->pix_fmt = dec_ctx->pix_fmt;
-        }*/
-        ost->enc->pix_fmt = m_par.useHwAccel ? m_hwPixFmt : AV_PIX_FMT_YUV420P;
+        }
+        //ost->enc->pix_fmt = m_par.useHwAccel ? m_hwPixFmt : AV_PIX_FMT_YUV420P;
 
 
         // video time_base can be set to whatever is handy and supported by encoder
@@ -521,9 +504,8 @@ void FFMpegEncode::setVideoCodePar(OutputStream *ost) {
 
     //ost->st->time_base = m_par.useHwAccel ? AVRational{1, m_par.fps} : AVRational{1, 1000};
 
-    ost->enc->time_base =  AVRational { 1, m_par.fps };
     //c->time_base = ost->st->time_base;
-
+/*
     if (m_par.useHwAccel && (m_ret = setHwframeCtx(ost->enc, m_hw_device_ctx)) < 0) {
         throw runtime_error("Failed to set hwframe context.");
     }
@@ -624,7 +606,7 @@ void FFMpegEncode::setVideoCodePar(OutputStream *ost) {
         if (m_ret < 0) {
             throw runtime_error("Error could not set rtmp option");
         }
-    }
+    }*/
 }
 
 void FFMpegEncode::openAudio(OutputStream *ost, AVDictionary *opt_arg) {
@@ -818,7 +800,8 @@ void FFMpegEncode::openVideo(OutputStream *ost, AVDictionary *opt_arg) {
     m_av_interleaved_wrote_first = false;
 
     // open the codec
-    auto ret = avcodec_open2(ost->enc, ost->codec, &opt);
+    //auto ret = avcodec_open2(ost->enc, ost->codec, &opt);
+    auto ret = avcodec_open2(ost->enc, ost->codec, nullptr);
     av_dict_free(&opt);
     if (ret < 0) {
         throw runtime_error("Could not open video codec: "+ ffmpeg::err2str(ret));
@@ -848,7 +831,7 @@ void FFMpegEncode::openVideo(OutputStream *ost, AVDictionary *opt_arg) {
     m_frameBGRA = allocPicture(AV_PIX_FMT_BGRA, m_par.width, m_par.height);
 
     if (m_par.useHwAccel) {
-        if (!(m_hw_frame = av_frame_alloc())) {
+        if (!((m_hw_frame = av_frame_alloc()))) {
             m_ret = AVERROR(ENOMEM);
             LOGE << "Couldn't allocate hw frame. No memory left";
             return;
@@ -868,24 +851,25 @@ void FFMpegEncode::openVideo(OutputStream *ost, AVDictionary *opt_arg) {
 
 // encode one video frame and send it to the muxer return 1 when encoding is finished, 0 otherwise
 int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
-    if (!ost->frame) {
+    auto encFrame = ost->frame;
+    if (!encFrame) {
         throw runtime_error("encFrame not allocated");
     }
 
     // only write if there was a frame downloaded
     if (m_useFiltering) {
         // allocate a frame with the settings of the context
-        ost->frame = av_frame_alloc();
-        if (!ost->frame) {
+        encFrame = av_frame_alloc();
+        if (!encFrame) {
             throw runtime_error("error copying frame to encFrame");
         }
 
-        av_image_alloc(ost->frame->data, ost->frame->linesize, ost->enc->width, ost->enc->height,
+        av_image_alloc(encFrame->data, encFrame->linesize, ost->enc->width, ost->enc->height,
                        ost->enc->pix_fmt, 1);
-        ost->frame->width = ost->enc->width;
-        ost->frame->height = ost->enc->height;
-        ost->frame->pict_type = AV_PICTURE_TYPE_NONE; // reset picture type for having encoder setting it
-        ost->frame->format = ost->enc->pix_fmt;
+        encFrame->width = ost->enc->width;
+        encFrame->height = ost->enc->height;
+        encFrame->pict_type = AV_PICTURE_TYPE_NONE; // reset picture type for having encoder setting it
+        encFrame->format = ost->enc->pix_fmt;
     }
 
     // copy raw rgb buffer to AVFrame
@@ -942,7 +926,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
 
         // push the frame into the filtergraph
         // killt den frame
-        m_ret = av_buffersrc_add_frame(m_buffersrc_ctx, ost->frame);
+        m_ret = av_buffersrc_add_frame(m_buffersrc_ctx, encFrame);
         if (m_ret != 0) {
             throw runtime_error("Error while feeding the filtergraph. error code " + std::to_string(m_ret));
         }
@@ -994,7 +978,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
         if ((m_ret = av_hwframe_transfer_data(m_hw_frame, ost->frame, 0)) < 0) { // around 0.22 ms for a HD
             throw runtime_error("av_hwframe_transfer_data failed");
         }
-        ost->frame = m_hw_frame;
+        encFrame = m_hw_frame;
     }
 
     auto decPkt = av_packet_alloc();
@@ -1007,14 +991,8 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
     }
 
     // send the frame to the encoder
-    auto frame = m_useFiltering ? m_filt_frame : ost->frame;
-    frame->pts = ost->next_pts++;
-    LOG << frame->pts;
-
-    AVRational initRat;
-    initRat.num = 1;
-    initRat.den = m_par.fps;
-    //frame->pts = av_rescale_q(ost->frame->pts,initRat, ost->enc->time_base);
+    auto frame = m_useFiltering ? m_filt_frame : encFrame;
+  //  LOG << frame->pts;
 
     m_ret = avcodec_send_frame(ost->enc, frame);
     if (m_ret < 0) {
@@ -1037,7 +1015,7 @@ int FFMpegEncode::writeVideoFrame(AVFormatContext *oc, OutputStream *ost) {
 
     av_packet_unref(decPkt);
     av_packet_free(&decPkt);
-    return ost->frame ? 0 : 1;
+    return encFrame ? 0 : 1;
 }
 
 int FFMpegEncode::writePacket(AVFormatContext *fmt_ctx, OutputStream *ost, AVPacket *pkt) {
@@ -1087,6 +1065,8 @@ void FFMpegEncode::closeStream(AVFormatContext *oc, FFMpegEncode::OutputStream *
 /// fixFps: force monotonic timestamps,
 /// bufPtr: optionally download to an external buffer
 void FFMpegEncode::downloadGlFbToVideoFrame(double fixFps, unsigned char* bufPtr, bool monotonic, int64_t pts) {
+    //LOG << "receive pts " << pts;
+
     if (!m_doRec) {
         return;
     }
@@ -1167,49 +1147,24 @@ void FFMpegEncode::savePngSeq() {
         if (!filesystem::exists(m_par.downloadFolder)) {
             filesystem::create_directory(m_par.downloadFolder);
         }
-
-        m_saveThread = std::thread([this]{
-            while (m_doRec){
-                if (m_saveQueueSize > 0){
-                    m_saveQueue[m_saveQueueRead]();
-                    ++m_saveQueueRead %= static_cast<int32_t>(m_saveQueue.size());
-                    m_saveQueueSize--;
-                } else {
-                    this_thread::sleep_for(400us);
-                }
-            }
-        });
-        m_saveThread.detach();
         m_savePngFirstCall = false;
     }
 
-    if (!m_downTex) {
-        m_downTex = make_unique<Texture>();
-    }
 
-    if (m_videoFrames.getReadBuff().bufferPtr) {
-        auto bPtr = m_videoFrames.getReadBuff().bufferPtr;
+    if (m_videoFrames.getWriteBuff().bufferPtr) {
+        auto bPtr = m_videoFrames.getWriteBuff().bufferPtr;
         auto seqPtr = m_pngSeqCnt;
-        m_saveQueue[m_saveQueueWrite] = [bPtr, seqPtr, this] {
-            m_downTex->saveBufToFile2D((m_par.downloadFolder+"/seq_"
-                                        +std::to_string(seqPtr / 1000 % 10)
-                                        +std::to_string(seqPtr / 100 % 10)
-                                        +std::to_string(seqPtr / 10 % 10)
-                                        +std::to_string(seqPtr % 10)+".tga").c_str(),
-                                       FIF_TARGA,
-                                       m_par.width,
-                                       m_par.height,
-                                       4,
-                                       bPtr);
-        };
-
-        ++m_saveQueueWrite %= static_cast<int32_t>(m_saveQueue.size());
-        m_saveQueueSize++;
-        if (m_saveQueueSize >= m_saveQueue.size()) {
-            LOGE << " save Queue Overflow!";
-        }
+        Texture::saveBufToFile2D((m_par.downloadFolder+"/seq_"
+                                    +std::to_string(seqPtr / 1000 % 10)
+                                    +std::to_string(seqPtr / 100 % 10)
+                                    +std::to_string(seqPtr / 10 % 10)
+                                    +std::to_string(seqPtr % 10)+".tga").c_str(),
+                                   FIF_TARGA,
+                                   m_par.width,
+                                   m_par.height,
+                                   4,
+                                   bPtr);
         m_pngSeqCnt++;
-        m_videoFrames.consumeCountUp();
     }
 }
 

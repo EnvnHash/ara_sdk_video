@@ -39,7 +39,7 @@ public:
 
     bool init(const ffmpeg::EncodePar& par);
     bool record(double time=0.0);
-    void openOutputFile(AVDictionary *avioOpts);
+    void openOutputFile(AVDictionary *avioOpts) const;
     void stop() { m_doRec = false; m_stopCond.wait(0); }
 
     int         writePacket(AVFormatContext *fmt_ctx, OutputStream *ost, AVPacket *pkt);
@@ -79,11 +79,11 @@ protected:
     std::string				        m_fileType;
     std::string				        m_forceCodec;
     AVDictionary*			        m_opt=nullptr;
-    const AVOutputFormat*		    m_fmt=nullptr;
+    //const AVOutputFormat*		    m_fmt=nullptr;
     AVFormatContext*		        m_oc=nullptr;
     AVBufferRef*                    m_hw_device_ctx=nullptr;
-    AVPixelFormat                   m_hwPixFmt=(AVPixelFormat)0;
-    AVPixelFormat                   m_hwSwFmt=(AVPixelFormat)0;
+    AVPixelFormat                   m_hwPixFmt{};
+    AVPixelFormat                   m_hwSwFmt{};
     AVFrame*                        m_frameBGRA=nullptr;
     AVFilterContext*		        m_buffersink_ctx=nullptr;
     AVFilterContext*		        m_buffersrc_ctx=nullptr;

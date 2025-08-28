@@ -17,6 +17,9 @@ if(NOT ANDROID)
         add_subdirectory(FFmpegTest)
         add_dependencies(FFmpegTest Utilities GLBase SceneGraph AudioVideo)
 
+        add_subdirectory(FFmpegTranscode)
+        add_dependencies(FFmpegTranscode Utilities GLBase SceneGraph AudioVideo)
+
         add_subdirectory(FFmpegAndroidDebug)
 
         add_subdirectory(FFmpegTest_UIApp)
