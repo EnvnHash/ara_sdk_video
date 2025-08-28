@@ -43,12 +43,10 @@ void FFMpegAudioFile::recvAudioPacket(audioCbData& data) {
     }
 
     if (m_cyclBuf.empty()) {
-        m_cyclBuf.allocate(2, data.samples * data.nChannels);
+        m_cyclBuf.allocate(6, data.samples * data.nChannels);
     }
 
-    while (m_cyclBuf.isFilled()) {
-        std::this_thread::sleep_for(200us);
-    }
+    m_cyclBuf.waitUntilNotFilled();
 
     auto buf = reinterpret_cast<float**>(data.buffer);
     for (auto i = 0; i<data.nChannels; ++i) {

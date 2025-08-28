@@ -3,6 +3,7 @@
 //
 
 #include "Portaudio/PortaudioAudioEngine.h"
+#include "AnimVal.h"
 
 using namespace std;
 
@@ -14,6 +15,13 @@ void PortaudioAudioEngine::start() {
     m_paStartTime = chrono::system_clock::now();
     m_procQueueThread = std::thread([this] {
         while (toType(m_state) >= toType(paState::Preparing)) {
+            {
+                unique_lock<mutex> l(m_cbQueueMtx);
+                for (auto&it : m_audioCbQueue) {
+                    it();
+                }
+                m_audioCbQueue.clear();
+            }
             procSampleQueue();
         }
     });
@@ -37,7 +45,7 @@ PaAudioFile& PortaudioAudioEngine::loadAudioFile(const filesystem::path& p) {
     return m_audioFiles.back();
 }
 
-void PortaudioAudioEngine::play(PaAudioFile& samp) {
+void PortaudioAudioEngine::playAudioFile(PaAudioFile& samp) {
     if (m_cycleBuffer.empty()) {
         LOGE << "Portaudio::play Error: cycleBuffer empty, can't add sample";
         return;
@@ -54,15 +62,20 @@ void PortaudioAudioEngine::stopAudioFile(PaAudioFile& samp) {
     std::erase_if(m_samplePlayQueue, [&](auto it) { return it == &samp; });
 }
 
+void PortaudioAudioEngine::fadeAudioFile(PaAudioFile& samp, fadeType ft, double duration) {
+    samp.fade(ft, duration, [ft, this, &samp]{
+        if (ft == fadeType::out) {
+            addToAudioCbQueue([this, &samp] { stopAudioFile(samp); });
+        }
+    });
+}
+
 void PortaudioAudioEngine::procSampleQueue() {
     if (m_cycleBuffer.empty()) {
         return;
     }
 
-    if (m_cycleBuffer.isFilled()) {
-        m_cycleBuffer.waitUntilNotFilled();
-    }
-
+    m_cycleBuffer.waitUntilNotFilled();
     bool countUp = false;
 
     {
@@ -92,7 +105,7 @@ void PortaudioAudioEngine::addAudioFileAtPos(PaAudioFile& af) {
 
     for (auto frame = 0; frame < framesToWrite; ++frame) {
         for (auto chan=0; chan < m_numChannels; ++chan, ++outBufPtr) {
-            *outBufPtr += af.consume(frame, chan, m_sampleRate);
+            *outBufPtr += af.consume(frame, chan, m_sampleRate) * af.getVolume();
         }
     }
 

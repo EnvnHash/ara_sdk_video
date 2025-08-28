@@ -11,6 +11,7 @@ namespace ara::av {
 
 PaAudioFile::PaAudioFile(const AudioFileLoadPar& p) {
     load(p);
+    m_volume.setVal(1.f);
 }
 
 void PaAudioFile::load(const AudioFileLoadPar& p) {
@@ -35,12 +36,13 @@ void PaAudioFile::load(const AudioFileLoadPar& p) {
 }
 
 float PaAudioFile::consume(int32_t frame, int32_t chan, int32_t sampleRate) {
-    unordered_map<AudioFileFormat, function<float(int32_t, int32_t, int32_t)>> funcMap {
-        { AudioFileFormat::Aiff, [this] (int32_t f, int32_t c, int32_t s) { return consumeInterpolated(f, c, s); } },
-        { AudioFileFormat::Wave, [this] (int32_t f, int32_t c, int32_t s) { return consumeInterpolated(f, c, s); } },
-        { AudioFileFormat::FFMpeg, [this] (int32_t f, int32_t c, int32_t s) { return consumeByBlock(f, c, s); } },
-    };
-    return funcMap[m_audioFile->getType()](frame, chan, sampleRate);
+    m_volume.update();
+    if (m_audioFile->getType() == AudioFileFormat::Aiff || m_audioFile->getType() == AudioFileFormat::Wave) {
+        return consumeInterpolated(frame, chan, sampleRate);
+    } else if (m_audioFile->getType() == AudioFileFormat::FFMpeg) {
+        return consumeByBlock(frame, chan, sampleRate);
+    }
+    return 0.f;
 }
 
 float PaAudioFile::consumeByBlock(int32_t frame, int32_t chan, int32_t) {
@@ -76,12 +78,11 @@ float PaAudioFile::consumeInterpolated(int32_t frame, int32_t chan, int32_t samp
 }
 
 void PaAudioFile::advance(int32_t frames, int32_t sampleRate) {
-    unordered_map<AudioFileFormat, function<void(int32_t, int32_t)>> funcMap{
-        {AudioFileFormat::Aiff,   [this](int32_t f, int32_t s) { advancePlayHead(f, s); }},
-        {AudioFileFormat::Wave,   [this](int32_t f, int32_t s) { advancePlayHead(f, s); }},
-        {AudioFileFormat::FFMpeg, [this](int32_t f, int32_t s) { advanceByBlock(f, s); }},
-    };
-    funcMap[m_audioFile->getType()](frames, sampleRate);
+    if (m_audioFile->getType() == AudioFileFormat::Aiff || m_audioFile->getType() == AudioFileFormat::Wave) {
+        advancePlayHead(frames, sampleRate);
+    } else if (m_audioFile->getType() == AudioFileFormat::FFMpeg) {
+        advanceByBlock(frames, sampleRate);
+    }
 }
 
 void PaAudioFile::advancePlayHead(int32_t frames, int32_t sampleRate) {
@@ -95,8 +96,15 @@ void PaAudioFile::advancePlayHead(int32_t frames, int32_t sampleRate) {
     }
 }
 
-void PaAudioFile::advanceByBlock(int32_t frames, int32_t sampleRate) {
+void PaAudioFile::advanceByBlock(int32_t frames, int32_t) {
     m_audioFile->advance(frames);
+}
+
+void PaAudioFile::fade(fadeType tp, double dur, const std::function<void()>& endFunc) {
+    if (endFunc) {
+        m_volume.setEndFunc(endFunc);
+    }
+    m_volume.start(tp == fadeType::in ? 0.f : 1.f, tp == fadeType::in ? 1.f : 0.f, dur, false);
 }
 
 }
