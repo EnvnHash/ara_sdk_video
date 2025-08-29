@@ -47,8 +47,9 @@ size_t 		        num_pbos=4;
 int 				m_nbytes{}; // number of bytes in the pbo m_buffer.
 GLenum 				glDownloadFmt{};
 AVPixelFormat 		downPixFmt{ AV_PIX_FMT_BGRA };
-ffmpeg::RecFrame    downFrame{};
-AVFrame*            downConvFrame{};
+ffmpeg::RecFrame    downBuffer{};
+AVFrame*            downBGRAFrame{};
+AVFrame*            downYUV420PFrame{};
 SwsContext*			m_converter=nullptr;	// muss unbedingt auf NULL initialisiert werden!!!
 int                 m_stride[8]{};
 int32_t             glNrBytesPerPixel{};
@@ -440,7 +441,6 @@ static int encodeWriteFrame(unsigned int stream_index, int flush) {
 
 static int filterEncodeWriteFrame(AVFrame *frame, unsigned int stream_index) {
     auto filter = &filter_ctx[stream_index];
-
     // push the decoded frame into the filtergraph
     int ret = av_buffersrc_add_frame_flags(filter->buffersrc_ctx, frame, 0);
     if (ret < 0) {
@@ -451,10 +451,9 @@ static int filterEncodeWriteFrame(AVFrame *frame, unsigned int stream_index) {
     while (true) {
         ret = av_buffersink_get_frame(filter->buffersink_ctx, filter->filtered_frame);
         if (ret < 0) {
-            /* if no more frames for output - returns AVERROR(EAGAIN)
-             * if flushed and no more frames for output - returns AVERROR_EOF
-             * rewrite retcode to 0 to show it as normal procedure completion
-             */
+            // if no more frames for output - returns AVERROR(EAGAIN)
+            // if flushed and no more frames for output - returns AVERROR_EOF
+            // rewrite retcode to 0 to show it as normal procedure completion
             if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
                 ret = 0;
             }
@@ -590,10 +589,10 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    downFrame.buffer.resize(m_nbytes);
-    downFrame.encTime = -1.0;
+    downBuffer.buffer.resize(m_nbytes);
+    downBuffer.encTime = -1.0;
 
-    downConvFrame = ffmpeg::allocPicture(downPixFmt, frame->width, frame->height);
+    downBGRAFrame = ffmpeg::allocPicture(downPixFmt, frame->width, frame->height);
 }
 
 static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
@@ -601,8 +600,8 @@ static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos.getReadBuff());
         auto ptr = static_cast<uint8_t *>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
         if (ptr) {
-            memcpy(downFrame.buffer.data(), ptr, m_nbytes);
-            downFrame.bufferPtr = downFrame.buffer.data();
+            memcpy(downBuffer.buffer.data(), ptr, m_nbytes);
+            downBuffer.bufferPtr = downBuffer.buffer.data();
             glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
         } else {
             LOGE << "Failed to map the m_buffer";
@@ -618,22 +617,28 @@ static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
 
-    downConvFrame->pts = frame->pts;
-    if (av_image_fill_arrays(downConvFrame->data, downConvFrame->linesize,
-                             downFrame.buffer.data(), downPixFmt, frame->width, frame->height, 1) < 0) {
+    downBGRAFrame->pts = frame->pts;
+    if (av_image_fill_arrays(downBGRAFrame->data, downBGRAFrame->linesize,
+                             downBuffer.buffer.data(), downPixFmt, frame->width, frame->height, 1) < 0) {
         throw std::runtime_error("Can't fill frame");
     }
 
-    *downConvFrame->data += downConvFrame->width * glNrBytesPerPixel * (downConvFrame->height - 1);
+    *downBGRAFrame->data += downBGRAFrame->width * glNrBytesPerPixel * (downBGRAFrame->height - 1);
     for (int i=0;i<8;i++) {
-        m_stride[i] = -downConvFrame->linesize[i];
+        m_stride[i] = -downBGRAFrame->linesize[i];
     }
 
-    libyuv::ARGBToI420(downConvFrame->data[0], m_stride[0],
-                   frame->data[0], frame->linesize[0],
-                   frame->data[1], frame->linesize[1],
-                   frame->data[2], frame->linesize[2],
-                   downConvFrame->width,  downConvFrame->height);
+    downYUV420PFrame = ffmpeg::allocPicture(ctx->pix_fmt, frame->width, frame->height);
+    if (av_frame_copy(downYUV420PFrame, frame) < 0) {
+        throw std::runtime_error("Can't copy frame");
+    }
+    av_frame_copy_props(downYUV420PFrame, frame);
+
+    libyuv::ARGBToI420(downBGRAFrame->data[0], m_stride[0],
+                   downYUV420PFrame->data[0], downYUV420PFrame->linesize[0],
+                   downYUV420PFrame->data[1], downYUV420PFrame->linesize[1],
+                   downYUV420PFrame->data[2], downYUV420PFrame->linesize[2],
+                   downBGRAFrame->width,  downBGRAFrame->height);
 }
 
 static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
@@ -719,11 +724,14 @@ int main(int argc, char **argv) {
                     }
 
                     stream->dec_frame->pts = stream->dec_frame->best_effort_timestamp;
+
                     if (stream->dec_frame->width && stream->dec_frame->height) {
                         drawOnTop(stream->dec_frame, stream->dec_ctx);
+                        ret = filterEncodeWriteFrame(downYUV420PFrame, stream_index);
+                    } else {
+                        ret = filterEncodeWriteFrame(stream->dec_frame, stream_index);
                     }
 
-                    ret = filterEncodeWriteFrame(stream->dec_frame, stream_index);
                     if (ret < 0){
                         throw runtime_error("filter_encode_write_frame returned error");
                     }
