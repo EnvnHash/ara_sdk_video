@@ -6,6 +6,7 @@
 
 #include "Asset/AssetImageBase.h"
 #include "FFMpeg/FFMpegPlayer.h"
+#include "libyuv/convert.h"
 
 using namespace std;
 using namespace ara;
@@ -36,14 +37,21 @@ StopWatch           fpsWatch;
 StopWatch           decodeWatch;
 GLFWwindow*		    window = nullptr;
 ShaderCollector     shCol;
+Shaders*            stdShader{};
 unique_ptr<Quad>    quad;
+unique_ptr<Quad>    quad2;
 FFMpegPlayer        fpl;
 bool                glInited = false;
 CycleBuffer<GLuint> pbos;
 size_t 		        num_pbos=4;
 int 				m_nbytes{}; // number of bytes in the pbo m_buffer.
 GLenum 				glDownloadFmt{};
+AVPixelFormat 		downPixFmt{ AV_PIX_FMT_BGRA };
 ffmpeg::RecFrame    downFrame{};
+AVFrame*            downConvFrame{};
+SwsContext*			m_converter=nullptr;	// muss unbedingt auf NULL initialisiert werden!!!
+int                 m_stride[8]{};
+int32_t             glNrBytesPerPixel{};
 
 static void openInputFile(const char *filename) {
     int ret;
@@ -551,6 +559,8 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     glfwMakeContextCurrent(window);
     glViewport(0, 0, frame->width, frame->height);
 
+    stdShader = glbase.shaderCollector().getStdParCol();
+
     auto& decPar = fpl.getPar();
     decPar.destWidth = frame->width;
     decPar.destHeight = frame->height;
@@ -567,9 +577,10 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     fpl.getFramesCycleBuf().feedCountUp();
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
+    quad2 = make_unique<Quad>(QuadInitParams{ .size = { 0.3f, 0.3f}, .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
 
-    glDownloadFmt = ffmpeg::getGlColorFormatFromAVPixelFormat(ctx->pix_fmt);
-    auto glNrBytesPerPixel = ffmpeg::getNumBytesPerPix(glDownloadFmt);
+    glDownloadFmt = ffmpeg::getGlColorFormatFromAVPixelFormat(downPixFmt);
+    glNrBytesPerPixel = ffmpeg::getNumBytesPerPix(glDownloadFmt);
     m_nbytes = decPar.destWidth * decPar.destHeight * glNrBytesPerPixel;
     pbos.allocate(num_pbos);
     glGenBuffers(static_cast<GLsizei>(num_pbos), pbos.getBuffer().data());
@@ -581,9 +592,11 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
 
     downFrame.buffer.resize(m_nbytes);
     downFrame.encTime = -1.0;
+
+    downConvFrame = ffmpeg::allocPicture(downPixFmt, frame->width, frame->height);
 }
 
-static void downloadFb(AVFrame* frame) {
+static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
     if (pbos.getFillAmt() > 0) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos.getReadBuff());
         auto ptr = static_cast<uint8_t *>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
@@ -604,6 +617,23 @@ static void downloadFb(AVFrame* frame) {
         pbos.feedCountUp();
     }
     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+
+    downConvFrame->pts = frame->pts;
+    if (av_image_fill_arrays(downConvFrame->data, downConvFrame->linesize,
+                             downFrame.buffer.data(), downPixFmt, frame->width, frame->height, 1) < 0) {
+        throw std::runtime_error("Can't fill frame");
+    }
+
+    *downConvFrame->data += downConvFrame->width * glNrBytesPerPixel * (downConvFrame->height - 1);
+    for (int i=0;i<8;i++) {
+        m_stride[i] = -downConvFrame->linesize[i];
+    }
+
+    libyuv::ARGBToI420(downConvFrame->data[0], m_stride[0],
+                   frame->data[0], frame->linesize[0],
+                   frame->data[1], frame->linesize[1],
+                   frame->data[2], frame->linesize[2],
+                   downConvFrame->width,  downConvFrame->height);
 }
 
 static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
@@ -625,9 +655,15 @@ static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
     fpl.shaderBegin(); // draw with conversion yuv -> rgb on gpu
     quad->draw();
 
+    stdShader->begin();
+    stdShader->setIdentMatrix4fv("m_pvm");
+    stdShader->setUniform4f("color", 1.f, 1.f, 0.f, 1.f);
+
+    quad2->draw();
+
     frame->pts = pts;
     glfwSwapBuffers(window);
-    downloadFb(frame);
+    downloadFb(frame, ctx);
 }
 
 int main(int argc, char **argv) {
