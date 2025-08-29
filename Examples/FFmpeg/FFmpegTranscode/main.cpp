@@ -7,6 +7,7 @@
 #include "Asset/AssetImageBase.h"
 #include "FFMpeg/FFMpegPlayer.h"
 #include "libyuv/convert.h"
+#include "Utils/PropoImage.h"
 
 using namespace std;
 using namespace ara;
@@ -40,6 +41,7 @@ ShaderCollector     shCol;
 Shaders*            stdShader{};
 unique_ptr<Quad>    quad;
 unique_ptr<Quad>    quad2;
+Texture             logo;
 FFMpegPlayer        fpl;
 bool                glInited = false;
 CycleBuffer<GLuint> pbos;
@@ -148,16 +150,23 @@ static void openOutputFile(const char *filename) {
             if (decCtx->codec_type == AVMEDIA_TYPE_VIDEO) {
                 enc_ctx->height = decCtx->height;
                 enc_ctx->width = decCtx->width;
+                enc_ctx->bit_rate = decCtx->bit_rate * 3;
                 enc_ctx->sample_aspect_ratio = decCtx->sample_aspect_ratio;
-                /* take first format from list of supported formats */
-                if (encoder->pix_fmts)
+                enc_ctx->color_primaries = decCtx->color_primaries;
+                enc_ctx->color_trc = decCtx->color_trc;
+                enc_ctx->colorspace = decCtx->colorspace;
+                enc_ctx->color_range = decCtx->color_range;
+                // take first format from list of supported formats
+                if (encoder->pix_fmts) {
                     enc_ctx->pix_fmt = encoder->pix_fmts[0];
-                else
+                } else {
                     enc_ctx->pix_fmt = decCtx->pix_fmt;
-                /* video time_base can be set to whatever is handy and supported by encoder */
+                }
+                // video time_base can be set to whatever is handy and supported by encoder
                 enc_ctx->time_base = av_inv_q(decCtx->framerate);
             } else {
                 enc_ctx->sample_rate = decCtx->sample_rate;
+                enc_ctx->bit_rate = decCtx->bit_rate;
                 ret = av_channel_layout_copy(&enc_ctx->ch_layout, &decCtx->ch_layout);
                 if (ret < 0) {
                     throw runtime_error("av_channel_layout_copy failed");
@@ -217,8 +226,6 @@ static void openOutputFile(const char *filename) {
 static int initFilter(FilteringContext* fctx, AVCodecContext *dec_ctx, AVCodecContext *enc_ctx, const char *filter_spec) {
     char args[512];
     int ret = 0;
-    const AVFilter *buffersrc = nullptr;
-    const AVFilter *buffersink = nullptr;
     AVFilterContext *buffersrc_ctx = nullptr;
     AVFilterContext *buffersink_ctx = nullptr;
     auto outputs = avfilter_inout_alloc();
@@ -231,8 +238,8 @@ static int initFilter(FilteringContext* fctx, AVCodecContext *dec_ctx, AVCodecCo
     }
 
     if (dec_ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
-        buffersrc = avfilter_get_by_name("buffer");
-        buffersink = avfilter_get_by_name("buffersink");
+        auto buffersrc = avfilter_get_by_name("buffer");
+        auto buffersink = avfilter_get_by_name("buffersink");
         if (!buffersrc || !buffersink) {
             av_log(nullptr, AV_LOG_ERROR, "filtering source or sink element not found\n");
             ret = AVERROR_UNKNOWN;
@@ -267,16 +274,17 @@ static int initFilter(FilteringContext* fctx, AVCodecContext *dec_ctx, AVCodecCo
         }
     } else if (dec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
         char buf[64];
-        buffersrc = avfilter_get_by_name("abuffer");
-        buffersink = avfilter_get_by_name("abuffersink");
+        auto buffersrc = avfilter_get_by_name("abuffer");
+        auto buffersink = avfilter_get_by_name("abuffersink");
         if (!buffersrc || !buffersink) {
             av_log(nullptr, AV_LOG_ERROR, "filtering source or sink element not found\n");
             ret = AVERROR_UNKNOWN;
             goto end;
         }
 
-        if (dec_ctx->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
+        if (dec_ctx->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC) {
             av_channel_layout_default(&dec_ctx->ch_layout, dec_ctx->ch_layout.nb_channels);
+        }
         av_channel_layout_describe(&dec_ctx->ch_layout, buf, sizeof(buf));
         snprintf(args, sizeof(args),
                 "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=%s",
@@ -290,15 +298,13 @@ static int initFilter(FilteringContext* fctx, AVCodecContext *dec_ctx, AVCodecCo
             goto end;
         }
 
-        ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out",
-                nullptr, nullptr, filter_graph);
+        ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", nullptr, nullptr, filter_graph);
         if (ret < 0) {
             av_log(nullptr, AV_LOG_ERROR, "Cannot create audio buffer sink\n");
             goto end;
         }
 
-        ret = av_opt_set_bin(buffersink_ctx, "sample_fmts",
-                reinterpret_cast<uint8_t *>(&enc_ctx->sample_fmt), sizeof(enc_ctx->sample_fmt),
+        ret = av_opt_set_bin(buffersink_ctx, "sample_fmts", reinterpret_cast<uint8_t *>(&enc_ctx->sample_fmt), sizeof(enc_ctx->sample_fmt),
                 AV_OPT_SEARCH_CHILDREN);
         if (ret < 0) {
             av_log(nullptr, AV_LOG_ERROR, "Cannot set output sample format\n");
@@ -554,11 +560,12 @@ static void initGlfw(AVFrame* frame) {
 static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     initGlfw(frame);
     initGLEW();
-    glbase.init(false);
+    glbase.init(false, window);
+
     glfwMakeContextCurrent(window);
     glViewport(0, 0, frame->width, frame->height);
 
-    stdShader = glbase.shaderCollector().getStdParCol();
+    stdShader = glbase.shaderCollector().getStdTex();
 
     auto& decPar = fpl.getPar();
     decPar.destWidth = frame->width;
@@ -576,7 +583,14 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     fpl.getFramesCycleBuf().feedCountUp();
 
     quad = make_unique<Quad>(QuadInitParams{ .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
-    quad2 = make_unique<Quad>(QuadInitParams{ .size = { 0.3f, 0.3f}, .color = glm::vec4{0.f, 0.f, 0.f, 1.f}, .flipHori = true });
+    quad2 = make_unique<Quad>(QuadInitParams{
+        .pos = glm::vec2(-0.95f, 0.45f),
+        .size = { 0.25f, 0.25f * static_cast<float>(frame->width) / static_cast<float>(frame->height)},
+        .color = glm::vec4{1.f, 1.f, 1.f, 1.f},
+        .flipHori = false });
+
+    logo.setGlbase(&glbase);
+    logo.loadTexture2D("sample_logo.png", 1);
 
     glDownloadFmt = ffmpeg::getGlColorFormatFromAVPixelFormat(downPixFmt);
     glNrBytesPerPixel = ffmpeg::getNumBytesPerPix(glDownloadFmt);
@@ -595,7 +609,7 @@ static void glResInit(AVFrame* frame, AVCodecContext* ctx) {
     downBGRAFrame = ffmpeg::allocPicture(downPixFmt, frame->width, frame->height);
 }
 
-static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
+static void downloadFb(AVFrame* frame, const AVCodecContext* ctx) {
     if (pbos.getFillAmt() > 0) {
         glBindBuffer(GL_PIXEL_PACK_BUFFER, pbos.getReadBuff());
         auto ptr = static_cast<uint8_t *>(glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
@@ -628,17 +642,21 @@ static void downloadFb(AVFrame* frame, AVCodecContext* ctx) {
         m_stride[i] = -downBGRAFrame->linesize[i];
     }
 
+    if (downYUV420PFrame) {
+        av_frame_free(&downYUV420PFrame);
+    }
     downYUV420PFrame = ffmpeg::allocPicture(ctx->pix_fmt, frame->width, frame->height);
     if (av_frame_copy(downYUV420PFrame, frame) < 0) {
         throw std::runtime_error("Can't copy frame");
     }
-    av_frame_copy_props(downYUV420PFrame, frame);
 
     libyuv::ARGBToI420(downBGRAFrame->data[0], m_stride[0],
                    downYUV420PFrame->data[0], downYUV420PFrame->linesize[0],
                    downYUV420PFrame->data[1], downYUV420PFrame->linesize[1],
                    downYUV420PFrame->data[2], downYUV420PFrame->linesize[2],
                    downBGRAFrame->width,  downBGRAFrame->height);
+
+    downYUV420PFrame->pts = frame->pts;
 }
 
 static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
@@ -647,6 +665,9 @@ static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
         glInited = true;
     }
 
+    glfwPollEvents();
+
+    glViewport(0, 0, frame->width, frame->height);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -662,8 +683,10 @@ static void drawOnTop(AVFrame* frame, AVCodecContext* ctx) {
 
     stdShader->begin();
     stdShader->setIdentMatrix4fv("m_pvm");
-    stdShader->setUniform4f("color", 1.f, 1.f, 0.f, 1.f);
+    stdShader->setUniform1i("tex", 0);
 
+    glActiveTexture(GL_TEXTURE0);
+    logo.bind();
     quad2->draw();
 
     frame->pts = pts;

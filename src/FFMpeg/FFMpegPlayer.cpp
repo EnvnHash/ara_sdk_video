@@ -161,11 +161,18 @@ std::string FFMpegPlayer::getYuv420FragShader() {
         float u = texture(u_tex_unit, tex_coord).r - 0.5;   \n
         float v = texture(v_tex_unit, tex_coord).r - 0.5;   \n
 
-        float r = y + 1.402 * v;                            \n
-        float g = y - 0.344 * u - 0.714 * v;                \n
-        float b = y + 1.772 * u;                            \n
+        u *= 1.1; // a bit more saturation
+        v *= 1.1;
 
-        fragColor = vec4(vec3(r, g, b), alpha);             \n
+        float r = y + 1.404 * v;                            \n
+        float g = y - 0.346 * u - 0.716 * v;                \n
+        float b = y + 1.775 * u;                            \n
+
+        vec3 adjustedColor = vec3(r, g, b) - vec3(0.5); // Shift to center around 0
+        adjustedColor *= 1.1;                   // Apply contrast scaling
+        adjustedColor += vec3(0.5);                    // Shift back to 0-1 range
+
+        fragColor = vec4(adjustedColor, alpha);             \n
     );
 }
 
