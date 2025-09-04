@@ -29,10 +29,10 @@ public:
     void setShaderCollector(ShaderCollector* shCol) { m_shCol = shCol; }
     void setVideoContext(AVCodecContext* ctx) { m_videoCodecCtx = ctx; }
     void allocateResources(const ffmpeg::DecodePar& p) override;
+    void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
 
 private:
     void allocGlRes(AVPixelFormat srcPixFmt);
-    void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
     bool calcFrameToUpload(double& actRelTime, double time, bool monotonic);
     void uploadNvFormat();
     void uploadYuv420();

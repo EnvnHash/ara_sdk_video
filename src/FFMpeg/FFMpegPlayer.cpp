@@ -51,6 +51,7 @@ void FFMpegPlayer::allocateResources(const ffmpeg::DecodePar& p) {
 
 void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
     initShader(srcPixFmt, m_par);
+
     m_nrTexBuffers = !m_par.decodeYuv420OnGpu ? 1 : (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
     m_textures = vector<Texture>(m_nrTexBuffers);
 
@@ -177,7 +178,7 @@ std::string FFMpegPlayer::getYuv420FragShader() {
 }
 
 void FFMpegPlayer::shaderBegin() {
-    if (m_run && m_shader && !m_textures.empty()) {
+    if (m_run && m_shader && (!m_textures.empty() || m_par.vdpauZeroCopy)) {
         m_shader->begin();
         m_shader->setIdentMatrix4fv("m_pvm");
         m_shader->setUniform1f("alpha", 1.f); // y
@@ -187,17 +188,19 @@ void FFMpegPlayer::shaderBegin() {
             m_shader->setUniform1i("u_tex_unit", 1); // u
             m_shader->setUniform1i("v_tex_unit", 2); // v
 
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, m_textures[0].getId()); // y
+            if (!m_par.vdpauZeroCopy) {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, m_textures[0].getId()); // y
 
-            if (m_srcPixFmt == AV_PIX_FMT_YUV420P || m_srcPixFmt == AV_PIX_FMT_NV12) {
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, m_textures[1].getId()); // u
-            }
+                if (m_srcPixFmt == AV_PIX_FMT_YUV420P || m_srcPixFmt == AV_PIX_FMT_NV12) {
+                    glActiveTexture(GL_TEXTURE1);
+                    glBindTexture(GL_TEXTURE_2D, m_textures[1].getId()); // u
+                }
 
-            if (m_srcPixFmt == AV_PIX_FMT_YUV420P) {
-                glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, m_textures[2].getId()); // v
+                if (m_srcPixFmt == AV_PIX_FMT_YUV420P) {
+                    glActiveTexture(GL_TEXTURE2);
+                    glBindTexture(GL_TEXTURE_2D, m_textures[2].getId()); // v
+                }
             }
         } else {
             m_shader->setUniform1i("tex", 0); // y

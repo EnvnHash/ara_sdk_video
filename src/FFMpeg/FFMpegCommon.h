@@ -104,6 +104,7 @@ struct DecodePar {
     bool                    loop = true;
     bool                    useHwAccel = true;
     bool                    decodeYuv420OnGpu = true;
+    bool                    vdpauZeroCopy = false;
     bool                    startDecodeThread = false;
     std::string             assetName;
 #ifdef __ANDROID__
