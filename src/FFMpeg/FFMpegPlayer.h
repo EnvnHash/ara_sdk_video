@@ -30,6 +30,7 @@ public:
     void setVideoContext(AVCodecContext* ctx) { m_videoCodecCtx = ctx; }
     void allocateResources(const ffmpeg::DecodePar& p) override;
     void initShader(AVPixelFormat srcPixFmt, ffmpeg::DecodePar& p);
+    static std::string getVertShader();
 
 private:
     void allocGlRes(AVPixelFormat srcPixFmt);
@@ -42,7 +43,6 @@ private:
 
     double getActRelTime(double time) { return time - m_startTime + static_cast<double>(m_videoStartPts) * m_timeBaseDiv[toType(ffmpeg::streamType::video)]; }
 
-    static std::string getVertShader();
     static std::string getFragShaderHeader();
     static std::string getNv12FragShader();
     static std::string getNv21FragShader();
