@@ -60,13 +60,16 @@ if (NOT ARA_VIDEO_SKIP_THIRD_PARTY_DOWNLOAD)
 			message(STATUS ${error})
 
 			if(NOT EXISTS "${ARA_AV_SOURCE_DIR}/third_party/${DIR}")
-				message(STATUS "extracting ${DIR}.tar.gz")
-				execute_process(
-						COMMAND tar -xvf ${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz
-						WORKING_DIRECTORY ${ARA_AV_SOURCE_DIR}/third_party/
-						RESULT_VARIABLE result
-				)
-			endif()
+				file(MAKE_DIRECTORY "${ARA_AV_SOURCE_DIR}/third_party/${DIR}")
+			endif ()
+
+			message(STATUS "extracting ${DIR}.tar.gz")
+			execute_process(
+					COMMAND tar -xvf ${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz
+					WORKING_DIRECTORY ${ARA_AV_SOURCE_DIR}/third_party/${DIR}
+					RESULT_VARIABLE result
+			)
+
 		endif ()
 	endforeach()
 	endif ()

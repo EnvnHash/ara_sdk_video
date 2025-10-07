@@ -51,7 +51,7 @@ float PaAudioFile::consumeByBlock(int32_t frame, int32_t chan, int32_t) {
         return 0.f;
     } else {
         auto& samples = cyclBuf->getReadBuff();
-        return samples[chan * samples.size() / m_audioFile->getNumChannels() + frame + m_audioFile->getReadOffset()];
+        return samples.empty() ? 0.f : samples[chan * samples.size() / m_audioFile->getNumChannels() + frame + m_audioFile->getReadOffset()];
     }
 }
 
