@@ -4,6 +4,8 @@
 
 #pragma once
 
+#ifdef ARA_USE_PORTAUDIO
+
 #include "AudioFile/AudioFile.h"
 #include "FFMpeg/FFMpegAudioPlayer.h"
 
@@ -31,3 +33,5 @@ private:
 };
 
 }
+
+#endif

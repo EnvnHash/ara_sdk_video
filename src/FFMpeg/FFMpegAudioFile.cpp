@@ -2,6 +2,8 @@
 // Created by sven on 19-08-25.
 //
 
+#ifdef ARA_USE_PORTAUDIO
+
 #include "FFMpeg/FFMpegAudioFile.h"
 
 using namespace std;
@@ -69,3 +71,4 @@ void FFMpegAudioFile::advance(int32_t frames) {
 }
 
 }
+#endif

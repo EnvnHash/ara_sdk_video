@@ -2,6 +2,8 @@
 // Created by sven on 06-08-25.
 //
 
+#ifdef ARA_USE_PORTAUDIO
+
 #pragma once
 
 #include "AudioFile/AudioFileAiff.h"
@@ -37,7 +39,7 @@ public:
     int32_t getNumChannels()                { return m_audioFile ? m_audioFile->getNumChannels() : 0; }
     int32_t getSampleRate()                 { return m_audioFile ? static_cast<int32_t>(m_audioFile->getSampleRate()) : 0; }
     auto getType()                   { return m_audioFile ? m_audioFile->getType() : AudioFileFormat{}; }
-    bool usingCycleBuf()                    { return m_audioFile && m_audioFile->usingCycleBuf(); }
+    bool usingCycleBuf() const { return m_audioFile && m_audioFile->usingCycleBuf(); }
     bool isPlaying() const                  { return m_playing; }
     bool reachedEnd() const                 { return m_reachedEnd; }
     void reset()                            { m_reachedEnd = false; m_playing = false; m_playHead = 0.0; m_posPointer = 0; }
@@ -57,3 +59,5 @@ protected:
 };
 
 }
+
+#endif

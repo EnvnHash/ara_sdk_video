@@ -2,6 +2,8 @@
 // Created by sven on 06-08-25.
 //
 
+#ifdef ARA_USE_PORTAUDIO
+
 #pragma once
 
 #include <Portaudio/Portaudio.h>
@@ -41,3 +43,5 @@ private:
 };
 
 }
+
+#endif

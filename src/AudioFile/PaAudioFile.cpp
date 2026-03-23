@@ -2,6 +2,8 @@
 // Created by sven on 06-08-25.
 //
 
+#ifdef ARA_USE_PORTAUDIO
+
 #include "PaAudioFile.h"
 #include "CycleBuffer.h"
 
@@ -108,3 +110,5 @@ void PaAudioFile::fade(fadeType tp, double dur, const std::function<void()>& end
 }
 
 }
+
+#endif
