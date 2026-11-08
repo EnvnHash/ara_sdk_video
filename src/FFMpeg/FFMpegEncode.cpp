@@ -290,28 +290,61 @@ void FFMpegEncode::addStream(OutputStream *ost, AVFormatContext *oc) {
     switch (ost->codec->type) {
         case AVMEDIA_TYPE_AUDIO:
 #ifdef WITH_AUDIO
-            c->sample_fmt  = (*codec)->sample_fmts ? (*codec)->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
-        c->bit_rate    = m_audioBitRate;
-        c->sample_rate = pa->getSampleRate();
-        if ((*codec)->supported_samplerates) {
-            c->sample_rate = (*codec)->supported_samplerates[0];
-            for (i = 0; (*codec)->supported_samplerates[i]; i++) {
-                if ((*codec)->supported_samplerates[i] == pa->getSampleRate())
-                    c->sample_rate = pa->getSampleRate();
+        {
+            // sample format
+            const void* out_config = nullptr;
+            if (avcodec_get_supported_config(nullptr, ost->codec, AV_CODEC_CONFIG_SAMPLE_FORMAT, 0, &out_config, nullptr) >= 0 && out_config) {
+                const enum AVSampleFormat* p = reinterpret_cast<const enum AVSampleFormat*>(out_config);
+                if (*p != AV_SAMPLE_FMT_NONE) {
+                    ost->enc->sample_fmt = *p;
+                } else {
+                    ost->enc->sample_fmt = AV_SAMPLE_FMT_FLTP;
+                }
+            } else {
+                ost->enc->sample_fmt = AV_SAMPLE_FMT_FLTP;
             }
-        }
-        c->channels        = av_get_channel_layout_nb_channels(c->channel_layout);
-        c->channel_layout = AV_CH_LAYOUT_STEREO;
-        if ((*codec)->channel_layouts) {
-            c->channel_layout = (*codec)->channel_layouts[0];
-            for (i = 0; (*codec)->channel_layouts[i]; i++) {
-                if ((*codec)->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
-                    c->channel_layout = AV_CH_LAYOUT_STEREO;
+            ost->enc->bit_rate = m_audioBitRate;
+            ost->enc->sample_rate = pa->getSampleRate();
+            // supported sample rates
+            {
+                const void* out_config_sr = nullptr;
+                if (avcodec_get_supported_config(nullptr, ost->codec, AV_CODEC_CONFIG_SAMPLE_RATE, 0, &out_config_sr, nullptr) >= 0 && out_config_sr) {
+                    const int* rates = reinterpret_cast<const int*>(out_config_sr);
+                    if (*rates) {
+                        ost->enc->sample_rate = *rates;
+                        while (*rates) {
+                            if (*rates == pa->getSampleRate()) {
+                                ost->enc->sample_rate = pa->getSampleRate();
+                                break;
+                            }
+                            rates++;
+                        }
+                    }
+                }
             }
+            ost->enc->channels = av_get_channel_layout_nb_channels(ost->enc->ch_layout);
+            ost->enc->ch_layout = AV_CH_LAYOUT_STEREO;
+            // channel layouts
+            {
+                const void* out_config_cl = nullptr;
+                if (avcodec_get_supported_config(nullptr, ost->codec, AV_CODEC_CONFIG_CHANNEL_LAYOUT, 0, &out_config_cl, nullptr) >= 0 && out_config_cl) {
+                    const uint64_t* layouts = reinterpret_cast<const uint64_t*>(out_config_cl);
+                    if (*layouts) {
+                        ost->enc->ch_layout = *layouts;
+                        while (*layouts) {
+                            if (*layouts == AV_CH_LAYOUT_STEREO) {
+                                ost->enc->ch_layout = AV_CH_LAYOUT_STEREO;
+                                break;
+                            }
+                            layouts++;
+                        }
+                    }
+                }
+            }
+            ost->enc->channels = av_get_channel_layout_nb_channels(ost->enc->ch_layout);
+            ost->st->time_base = (AVRational){ 1, ost->enc->sample_rate };
+            av_opt_set(ost->enc->priv_data, "preset", "fastest", 0);
         }
-        c->channels        = av_get_channel_layout_nb_channels(c->channel_layout);
-        ost->st->time_base = (AVRational){ 1, c->sample_rate };
-        av_opt_set(c->priv_data, "preset", "fastest", 0);
 #endif
             break;
         case AVMEDIA_TYPE_VIDEO:
@@ -469,10 +502,18 @@ void FFMpegEncode::setVideoCodePar(OutputStream *ost) {
         ost->enc->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
         // take first format from list of supported formats
 
-        if (ost->codec->pix_fmts) {
-            ost->enc->pix_fmt = ost->codec->pix_fmts[0];
-        } else {
-            ost->enc->pix_fmt = dec_ctx->pix_fmt;
+        {
+            const void* out_config = nullptr;
+            if (avcodec_get_supported_config(nullptr, ost->codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &out_config, nullptr) >= 0 && out_config) {
+                const enum AVPixelFormat* p = reinterpret_cast<const enum AVPixelFormat*>(out_config);
+                if (*p != AV_PIX_FMT_NONE) {
+                    ost->enc->pix_fmt = *p;
+                } else {
+                    ost->enc->pix_fmt = dec_ctx->pix_fmt;
+                }
+            } else {
+                ost->enc->pix_fmt = dec_ctx->pix_fmt;
+            }
         }
         //ost->enc->pix_fmt = m_par.useHwAccel ? m_hwPixFmt : AV_PIX_FMT_YUV420P;
 

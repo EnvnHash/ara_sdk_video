@@ -246,8 +246,8 @@ static enum AVPixelFormat findFmtByHwType(const enum AVHWDeviceType type) {
 
 static inline AVPixelFormat hwFormatToCheck{};
 
-static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, int width, int height, std::vector<uint8_t>* buf=nullptr) {
-    auto picture = av_frame_alloc();
+static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, const int width, const int height, std::vector<uint8_t>* buf=nullptr) {
+    const auto picture = av_frame_alloc();
     if (!picture) {
         return nullptr;
     }
@@ -271,8 +271,8 @@ static AVFrame* allocPicture(enum AVPixelFormat pix_fmt, int width, int height, 
     return picture;
 }
 
-static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, AVChannelLayout channel_layout, int sample_rate, int nb_samples) {
-    auto frame = av_frame_alloc();
+static AVFrame* allocAudioFrame(const AVSampleFormat sample_fmt, const AVChannelLayout &channel_layout, int sample_rate, const int nb_samples) {
+    const auto frame = av_frame_alloc();
     if (!frame) {
         LOGE << "Error allocating an audio frame";
         return nullptr;
@@ -285,8 +285,7 @@ static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, AVChannelLayout 
     frame->nb_samples = nb_samples;
 
     if (nb_samples) {
-        auto ret = av_frame_get_buffer(frame, 0);
-        if (ret < 0) {
+        if (const auto ret = av_frame_get_buffer(frame, 0); ret < 0) {
             LOGE << "Error allocating an audio m_buffer";
             return nullptr;
         }
@@ -296,12 +295,11 @@ static AVFrame* allocAudioFrame(enum AVSampleFormat sample_fmt, AVChannelLayout 
 }
 
 static enum AVPixelFormat getHwFormat(AVCodecContext*, const enum AVPixelFormat *pix_fmts) {
-    const enum AVPixelFormat *p;
-    enum AVPixelFormat ret={AVPixelFormat(0)};
+    enum AVPixelFormat ret={static_cast<AVPixelFormat>(0)};
     bool gotFirst=false;
     bool found=false;
 
-    for (p = pix_fmts; *p != -1; p++) {
+    for (const AVPixelFormat *p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
         if (!gotFirst){
             ret = *p;
             gotFirst = true;
@@ -321,13 +319,14 @@ static enum AVPixelFormat getHwFormat(AVCodecContext*, const enum AVPixelFormat 
 }
 
 static const AVCodec* getCodecFromId(const AVCodecID& id) {
-    auto localCodec = avcodec_find_decoder(id);
+    const auto localCodec = avcodec_find_decoder(id);
     if (localCodec) {
-        if (localCodec->pix_fmts && localCodec->pix_fmts[0] != -1) {
-            int ind = 0;
-            while (localCodec->pix_fmts[ind] != -1) {
-                LOG << "CODEC possible pix_fmts: " << localCodec->pix_fmts[ind];
-                ++ind;
+        const void* out_config = nullptr;
+        if (const int ret = avcodec_get_supported_config(nullptr, localCodec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &out_config, nullptr); ret >= 0 && out_config) {
+            const auto* p = static_cast<const enum AVPixelFormat*>(out_config);
+            while (*p != AV_PIX_FMT_NONE) {
+                LOG << "CODEC possible pix_fmts: " << *p;
+                ++p;
             }
         }
     }
@@ -336,7 +335,7 @@ static const AVCodec* getCodecFromId(const AVCodecID& id) {
 }
 
 static void dumpEncoders() {
-    const AVCodec *current_codec = nullptr;
+    const AVCodec *current_codec{};
     void *i{};
     while ((current_codec = av_codec_iterate(&i))) {
         if (av_codec_is_encoder(current_codec)) {
@@ -346,7 +345,7 @@ static void dumpEncoders() {
 }
 
 static void dumpDecoders() {
-    const AVCodec *current_codec = nullptr;
+    const AVCodec *current_codec{};
     void *i{};
     while ((current_codec = av_codec_iterate(&i))) {
         if (av_codec_is_decoder(current_codec)) {
@@ -383,7 +382,7 @@ static double r2d(AVRational r) {
 }
 
 static int checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *spec) {
-    int ret = avformat_match_stream_specifier(s, st, spec);
+    const int ret = avformat_match_stream_specifier(s, st, spec);
     if (ret < 0) {
         av_log(s, AV_LOG_ERROR, "Invalid stream specifier: %s.\n", spec);
     }
@@ -392,15 +391,15 @@ static int checkStreamSpecifier(AVFormatContext *s, AVStream *st, const char *sp
 
 static AVDictionary* filterCodecOpts(AVDictionary *opts, enum AVCodecID codec_id, AVFormatContext *s,
                                      AVStream *st, AVCodec *codec) {
-    AVDictionary    *ret = nullptr;
-    AVDictionaryEntry *t = nullptr;
+    AVDictionary    *ret{};
+    const AVDictionaryEntry *t{};
     int            flags = s->oformat ? AV_OPT_FLAG_ENCODING_PARAM
                                       : AV_OPT_FLAG_DECODING_PARAM;
     char          prefix = 0;
     const AVClass    *cc = avcodec_get_class();
 
     if (!codec) {
-        codec = (AVCodec*)(s->oformat ? avcodec_find_encoder(codec_id) : avcodec_find_decoder(codec_id));
+        codec = const_cast<AVCodec *>(s->oformat ? avcodec_find_encoder(codec_id) : avcodec_find_decoder(codec_id));
     }
 
     switch (st->codecpar->codec_type) {
@@ -452,7 +451,7 @@ static AVDictionary** setupFindStreamInfoOpts(AVFormatContext *s, AVDictionary *
     }
 
     AVDictionary **opts{};
-    opts = (AVDictionary**) av_calloc(s->nb_streams, sizeof(*opts));
+    opts = static_cast<AVDictionary **>(av_calloc(s->nb_streams, sizeof(*opts)));
     if (!opts) {
         LOGE << "Could not alloc memory for stream options.";
         return nullptr;

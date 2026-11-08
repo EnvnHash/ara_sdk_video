@@ -19,26 +19,26 @@ using namespace ara::av;
 bool			    printFps = false;
 bool			    inited = false;
 
-GLFWwindow*		    window = nullptr;
-GLBase              glbase;
-Shaders*            stdTex;
-Shaders*            stdCol;
-unique_ptr<Quad>    quad;
-FFMpegPlayer        player;
-unique_ptr<TypoGlyphMap> typo;
+static GLFWwindow*		   window{};
+static GLBase              glbase;
+static Shaders*            stdTex{};
+static Shaders*            stdCol{};
+static unique_ptr<Quad>    quad;
+static FFMpegPlayer        player;
+static unique_ptr<TypoGlyphMap> typo;
 
-int				    winWidth = 1280;
-int				    winHeight = 720;
-double 			    actTime = 0.0;
-double 			    timeFmod = 0.0;
-double              dt = 0.0;
-glm::vec4           tCol(1.f, 0.4f, 0.4f, 1.f);
-float               barHeight=0.01f;
-float               barWidth=0.2f;
-float               infoBlockLeft=0.32f;
-float               lableWidth=0.4f;
-float               infoBlockTop=-0.8f;
-float               audioInfoBlockLeft=0.58f;
+static int				   winWidth = 1280;
+static int				   winHeight = 720;
+static double 			   actTime = 0.0;
+static double 			   timeFmod = 0.0;
+static double              dt = 0.0;
+static glm::vec4           tCol(1.f, 0.4f, 0.4f, 1.f);
+static float               barHeight=0.01f;
+static float               barWidth=0.2f;
+static float               infoBlockLeft=0.32f;
+static float               lableWidth=0.4f;
+static float               infoBlockTop=-0.8f;
+static float               audioInfoBlockLeft=0.58f;
 
 static void output_error(int error, const char* msg) {
 	fprintf(stderr, "Error: %s\n", msg);
@@ -51,7 +51,7 @@ static void key_callback(GLFWwindow* win, int key, int scancode, int action, int
 	}
 }
 
-void init() {
+static void init() {
     glbase.init(false);
     glfwMakeContextCurrent(window);
 
@@ -62,7 +62,7 @@ void init() {
 
     player.openFile({
         .glbase = &glbase,
-        .filePath = "video_test.mp4",
+        .filePath = "trailer_1080p.mov",
         .destWidth = winWidth,
         .destHeight = winHeight
     });
@@ -85,18 +85,18 @@ void init() {
             glFragColor = color;                                            \n
     });
     frag = ShaderCollector::getShaderHeader() + frag;
-    stdCol = ShaderCollector().add("buffStat", vert, frag);
+    stdCol = glbase.shaderCollector().add("buffStat", vert, frag);
 
     typo = make_unique<TypoGlyphMap>(winWidth, winHeight);
     typo->loadFont((filesystem::path("resdata") / "Fonts" / "open-sans" / "OpenSans-Light.ttf").string().c_str(), &glbase.shaderCollector());
 }
 
-void drawBufferStatus() {
-    std::string bFilledLabl = "V-Buffers filled " + std::to_string(player.getNrBufferedFrames()) + "/" + std::to_string(player.getVideoFrameBufferSize());
+static void drawBufferStatus() {
+    const std::string bFilledLabl = "V-Buffers filled " + std::to_string(player.getNrBufferedFrames()) + "/" + std::to_string(player.getVideoFrameBufferSize());
     typo->print(infoBlockLeft, infoBlockTop, bFilledLabl, 18, &tCol[0]);
 
     stdCol->begin();
-    float bufFilled = (float) player.getNrBufferedFrames() / (float)(player.getVideoFrameBufferSize());
+    const float bufFilled = static_cast<float>(player.getNrBufferedFrames()) / static_cast<float>(player.getVideoFrameBufferSize());
     stdCol->setIdentMatrix4fv("m_pvm");
     stdCol->setUniform4f("color", 0.f, 1.f, 0.f, 1.f);
     stdCol->setUniform2f("size", bufFilled * barWidth, barHeight);
@@ -105,8 +105,8 @@ void drawBufferStatus() {
     quad->draw();
 }
 
-void drawAudioWriteBuffer() {
-    std::string decLabl = "A-Write Buffer: "+std::to_string(player.getAudioWriteBufIdx());
+static void drawAudioWriteBuffer() {
+    const std::string decLabl = "A-Write Buffer: "+std::to_string(player.getAudioWriteBufIdx());
     typo->print(audioInfoBlockLeft, infoBlockTop - barHeight*4, decLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -120,8 +120,8 @@ void drawAudioWriteBuffer() {
     quad->draw();
 }
 
-void drawAudioReadBuffer() {
-    std::string uplLabl = "A-Read Buffer: "+std::to_string(player.getAudioReadBufIdx());
+static void drawAudioReadBuffer() {
+    const std::string uplLabl = "A-Read Buffer: "+std::to_string(player.getAudioReadBufIdx());
     typo->print(audioInfoBlockLeft, infoBlockTop - barHeight*8, uplLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -135,8 +135,8 @@ void drawAudioReadBuffer() {
     quad->draw();
 }
 
-void drawDecodeBufferNr() {
-    std::string decLabl = "V-Decode Buffer: "+std::to_string(player.getWriteFramePtr());
+static void drawDecodeBufferNr() {
+    const std::string decLabl = "V-Decode Buffer: "+std::to_string(player.getWriteFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*4, decLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -150,8 +150,8 @@ void drawDecodeBufferNr() {
     quad->draw();
 }
 
-void drawFrameToUploadNr() {
-    std::string uplLabl = "V-Upload Buffer: "+std::to_string(player.getReadFramePtr());
+static void drawFrameToUploadNr() {
+    const std::string uplLabl = "V-Upload Buffer: "+std::to_string(player.getReadFramePtr());
     typo->print(infoBlockLeft, infoBlockTop - barHeight*8, uplLabl, 18, &tCol[0]);
 
     stdCol->begin();
@@ -170,7 +170,7 @@ static void display() {
 
 	// check Framerate every 2 seconds
 	if (printFps) {
-		double newTimeFmod = std::fmod(glfwGetTime(), 2.0);
+		const double newTimeFmod = std::fmod(glfwGetTime(), 2.0);
 		if (newTimeFmod < timeFmod) {
 			printf("dt: %f fps: %f \n", dt, 1.0 / dt);
 		}

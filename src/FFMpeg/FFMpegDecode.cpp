@@ -175,9 +175,8 @@ void FFMpegDecode::setDefaultHwDevice() {
 #endif
 }
 
-bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, DecodePar& p) {
-    int err=0;
-    auto path = !p.filePath.empty() ? p.isAsset ? "" : p.filePath.c_str() : nullptr;
+bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** options, const DecodePar& p) {
+    const auto path = !p.filePath.empty() ? p.isAsset ? "" : p.filePath.c_str() : nullptr;
 
     if (p.isAsset) {
         m_ioCtx.load(p.filePath);
@@ -186,6 +185,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
     }
 
     if (avformat_open_input(&m_formatContext, path, nullptr, nullptr) != 0) {
+        constexpr int err=0;
         throw runtime_error("ERROR could not open the file "+p.filePath+" "+err2str(err));
     }
 
@@ -193,14 +193,13 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
         av_dict_set(&m_formatOpts, "scan_all_pmts", nullptr, AV_DICT_MATCH_CASE);
     }
 
-    if (AVDictionaryEntry *t{}; (t = av_dict_get(m_formatOpts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
+    if (AVDictionaryEntry *t; (t = av_dict_get(m_formatOpts, "", nullptr, AV_DICT_IGNORE_SUFFIX))) {
         throw runtime_error("Option "+std::string(t->key)+" not found.");
     }
     if (m_genpts) {
         m_formatContext->flags |= AVFMT_FLAG_GENPTS;
     }
 
-    av_format_inject_global_side_data(m_formatContext);
     initStreamInfo();
 
     if (m_formatContext->pb) {
@@ -223,7 +222,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
 
     // loop though all the streams and print its main information
     for (auto i = 0; i < m_formatContext->nb_streams; ++i) {
-        auto localCodecParameters = m_formatContext->streams[i]->codecpar;
+        const auto localCodecParameters = m_formatContext->streams[i]->codecpar;
         if (!localCodecParameters) {
             continue;
         }
@@ -232,7 +231,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
         }
 
         // finds the registered player for a codec ID
-        auto localCodec = getCodecFromId(localCodecParameters->codec_id);
+        const auto localCodec = getCodecFromId(localCodecParameters->codec_id);
 
         // when the stream is a video we store its index, codec parameters and codec
         if (localCodecParameters->codec_type == AVMEDIA_TYPE_VIDEO) {
@@ -251,7 +250,7 @@ bool FFMpegDecode::setupStreams(const AVInputFormat* format, AVDictionary** opti
     return true;
 }
 
-void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecParameters, const AVCodec* ) {
+void FFMpegDecode::parseVideoCodecPar(const int32_t i, AVCodecParameters* p, const AVCodec* ) {
     m_streamIndex[toType(streamType::video)] = i;
     ++m_videoNrTracks;
     m_videoCodecCtx = avcodec_alloc_context3(nullptr);
@@ -265,7 +264,7 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
     }
 
     // Fill the codec context based on the values from the supplied codec parameters
-    if (avcodec_parameters_to_context(m_videoCodecCtx, localCodecParameters) < 0) {
+    if (avcodec_parameters_to_context(m_videoCodecCtx, p) < 0) {
         throw runtime_error("failed to copy codec params to video codec context");
     }
 
@@ -321,7 +320,7 @@ void FFMpegDecode::parseVideoCodecPar(int32_t i, AVCodecParameters* localCodecPa
     }
 }
 
-void FFMpegDecode::parseAudioCodecPar(int32_t i, AVCodecParameters* localCodecParameters, const AVCodec* localCodec) {
+void FFMpegDecode::parseAudioCodecPar(const int32_t i, AVCodecParameters* localCodecParameters, const AVCodec* localCodec) {
     // TODO : there is a problem with 5.1, AAC which is detected as 1 channel
     m_audioNumChannels = localCodecParameters->ch_layout.nb_channels;
     m_streamIndex[toType(streamType::audio)] = i;
@@ -347,7 +346,7 @@ void FFMpegDecode::parseAudioCodecPar(int32_t i, AVCodecParameters* localCodecPa
 }
 
 void FFMpegDecode::setStreamTiming(int32_t i, streamType t) {
-    auto strIdx = m_streamIndex[toType(t)];
+    const auto strIdx = m_streamIndex[toType(t)];
     m_timeBaseDiv[toType(t)] = r2d(m_formatContext->streams[strIdx]->time_base);
 
     if (m_formatContext->streams[i]->r_frame_rate.num) {
@@ -362,13 +361,13 @@ void FFMpegDecode::setStreamTiming(int32_t i, streamType t) {
     m_streamDuration[toType(t)] = getDurationSec(t);
 }
 
-void FFMpegDecode::initStreamInfo() {
+void FFMpegDecode::initStreamInfo() const {
     // read Packets from the Format to get stream information
     // this function populates m_formatContext->streams (of size equals to m_formatContext->nb_streams)
     // the arguments are: the AVFormatContext and options contains options for codec corresponding to i-th stream.
     // On return each dictionary will be filled with options that were not found.
     auto opts = setupFindStreamInfoOpts(m_formatContext, m_codecOpts);
-    auto err = avformat_find_stream_info(m_formatContext, opts);
+    const auto err = avformat_find_stream_info(m_formatContext, opts);
     for (auto i = 0; i < static_cast<int32_t>(m_formatContext->nb_streams); ++i) {
         av_dict_free(&opts[i]);
     }
@@ -378,7 +377,7 @@ void FFMpegDecode::initStreamInfo() {
     }
 }
 
-void FFMpegDecode::parseSeeking() {
+void FFMpegDecode::parseSeeking() const {
     if (!m_isStream && m_start_time != AV_NOPTS_VALUE) {
         int64_t timestamp = m_start_time;
         // add the stream start time
@@ -399,15 +398,15 @@ void FFMpegDecode::allocateResources(const DecodePar& p) {
 
     if (p.destWidth && p.destHeight) {
         m_frames.allocate(m_videoFrameBufferSize, 1);
-        for (auto& it : m_frames.getBuffer()) {
-            it.frame = av_frame_alloc();
-            it.frame->width = p.destWidth;
-            it.frame->height = p.destHeight;
-            it.frame->pts = -1;
-            if (it.frame == nullptr) {
+        for (auto&[frame, ptss] : m_frames.getBuffer()) {
+            frame = av_frame_alloc();
+            frame->width = p.destWidth;
+            frame->height = p.destHeight;
+            frame->pts = -1;
+            if (frame == nullptr) {
                 throw runtime_error("failed to allocated memory for AVFrame");
             }
-            it.ptss = -1.0;
+            ptss = -1.0;
         }
     }
 
@@ -429,7 +428,7 @@ void FFMpegDecode::start(double time) {
 void FFMpegDecode::stop() {
     m_run = false;
     m_decodeCond.notify();     // unlock waits
-    bool unlock = m_mutex.try_lock();
+    const bool unlock = m_mutex.try_lock();
     m_endThreadCond.wait(0);
     clearResources();
     if (unlock) {
@@ -437,7 +436,7 @@ void FFMpegDecode::stop() {
     }
 }
 
-bool FFMpegDecode::setAudioConverter(int destSampleRate, AVSampleFormat format) {
+bool FFMpegDecode::setAudioConverter(int destSampleRate, const AVSampleFormat format) {
     m_useAudioConversion = true;
     if (!m_audioCodecCtx){
         LOGE << "FFMpegDecode::setAudioConverter failed!, m_audioCodecCtx == NULL";
@@ -513,7 +512,7 @@ int32_t FFMpegDecode::checkReceiveFrame(AVCodecContext* codecContext) {
     return response;
 }
 
-int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
+int32_t FFMpegDecode::parseReceivedFrame(const AVCodecContext* codecContext) {
     // convert frame to desired size and m_format
     if (m_par.useHwAccel && m_frame->format == m_hwPixFmt) {
         transferFromHwToCpu();
@@ -533,9 +532,6 @@ int32_t FFMpegDecode::parseReceivedFrame(AVCodecContext* codecContext) {
     } else if (!m_par.useHwAccel) {
         m_srcPixFmt = codecContext->pix_fmt;
     }
-
-    auto frame = m_frames.getWriteBuff().frame;
-    LOG << frame->pts;
 
     if (m_videoCb) {
         m_videoCb(m_frames.getWriteBuff().frame);
@@ -575,11 +571,11 @@ void FFMpegDecode::transferFromHwToCpu() {
     m_frames.getWriteBuff().frame->pict_type = m_frame->pict_type;
 }
 
-int32_t FFMpegDecode::convertFrameToCpuFormat(AVCodecContext* codecContext) {
+int32_t FFMpegDecode::convertFrameToCpuFormat(const AVCodecContext* codecContext) {
     if (!m_imgConvertCtx) {
         m_imgConvertCtx = sws_getCachedContext(m_imgConvertCtx,
                                                codecContext->width, codecContext->height,
-                                               (AVPixelFormat) m_frames.getWriteBuff().frame->format,
+                                               static_cast<AVPixelFormat>(m_frames.getWriteBuff().frame->format),
                                                m_par.destWidth, m_par.destHeight, m_destPixFmt,
                                                SWS_FAST_BILINEAR, //SWS_BICUBIC,
                                                  nullptr, nullptr, nullptr);
@@ -611,7 +607,7 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
 
         // we got a valid packet!!
         if (m_run && response >= 0) {
-            int data_size = av_samples_get_buffer_size(nullptr, codecContext->ch_layout.nb_channels,
+            const int data_size = av_samples_get_buffer_size(nullptr, codecContext->ch_layout.nb_channels,
                                                        m_audioFrame->nb_samples,
                                                        codecContext->sample_fmt, 1);
 
@@ -678,12 +674,12 @@ int FFMpegDecode::decodeAudioPacket(AVPacket *packet, AVCodecContext *codecConte
     return 0;
 }
 
-void FFMpegDecode::onEndOfFile(ffmpeg::streamType t) {
+void FFMpegDecode::onEndOfFile(ffmpeg::streamType t) const {
     if (m_par.endCb) {
         m_par.endCb();
     }
     if (m_par.loop) {
-        auto idx = m_streamIndex[toType(streamType::video)] >= 0 ? toType(streamType::video) : toType(streamType::audio);
+        const auto idx = m_streamIndex[toType(streamType::video)] >= 0 ? toType(streamType::video) : toType(streamType::audio);
         av_seek_frame(m_formatContext, m_streamIndex[idx], 0, AVSEEK_FLAG_BYTE);
     }
 }
@@ -715,7 +711,7 @@ uint8_t* FFMpegDecode::reqNextBuf() {
     return buf;
 }
 
-void FFMpegDecode::seekFrame(int64_t frame_number, double time) {
+void FFMpegDecode::seekFrame(const int64_t frame_number, const double time) {
      // Seek to the keyframe at timestamp.
      // 'timestamp' in 'stream_index'.
      //
@@ -745,12 +741,12 @@ int FFMpegDecode::initHwDecode(AVCodecContext *ctx, const enum AVHWDeviceType ty
     return err;
 }
 
-double FFMpegDecode::getDurationSec(streamType t) {
+double FFMpegDecode::getDurationSec(const streamType t) const {
     return static_cast<double>(m_formatContext->streams[m_streamIndex[toType(t)]]->duration)
                                * r2d(m_formatContext->streams[m_streamIndex[toType(t)]]->time_base);
 }
 
-int64_t FFMpegDecode::getTotalFrames(streamType t) {
+int64_t FFMpegDecode::getTotalFrames(const streamType t) const {
     if (!m_formatContext) {
         return 0;
     }
@@ -767,9 +763,8 @@ int64_t FFMpegDecode::getTotalFrames(streamType t) {
     }
 }
 
-double FFMpegDecode::getFps(streamType t) {
-    double fps = r2d(m_formatContext->streams[m_streamIndex[toType(t)]]->avg_frame_rate);
-    return fps;
+double FFMpegDecode::getFps(const streamType t) const {
+    return r2d(m_formatContext->streams[m_streamIndex[toType(t)]]->avg_frame_rate);
 }
 
 void FFMpegDecode::clearResources() {
@@ -798,8 +793,8 @@ void FFMpegDecode::clearResources() {
         m_audioSwrCtx = nullptr;
     }
 
-    for (auto &it : m_frames.getBuffer()) {
-        av_frame_free(&it.frame);
+    for (auto &[frame, ptss] : m_frames.getBuffer()) {
+        av_frame_free(&frame);
     }
 
     m_frames.clear();

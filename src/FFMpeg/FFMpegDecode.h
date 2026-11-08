@@ -58,9 +58,9 @@ public:
         return m_formatContext ? m_formatContext->streams[m_streamIndex[toType(ffmpeg::streamType::video)]] : nullptr;
     }
 
-    double  		    getDurationSec(ffmpeg::streamType);
-    double 		        getFps(ffmpeg::streamType);
-    int64_t 		    getTotalFrames(ffmpeg::streamType);
+    double  		    getDurationSec(ffmpeg::streamType) const;
+    double 		        getFps(ffmpeg::streamType) const;
+    int64_t 		    getTotalFrames(ffmpeg::streamType) const;
     [[nodiscard]] auto  getSrcPixFmt() const { return m_srcPixFmt; }
     [[nodiscard]] auto  getNrBufferedFrames() { return m_frames.getFillAmt(); }
     auto                getSampleRate() { return m_audioCodecCtx ? (int)m_audioCodecCtx->sample_rate : 0; }
@@ -84,22 +84,22 @@ protected:
     void            allocFormatContext();
     void            checkHwDeviceType();
     void            checkForNetworkSrc(const ffmpeg::DecodePar& p);
-    bool            setupStreams(const AVInputFormat*, AVDictionary**, ffmpeg::DecodePar& p);
+    bool            setupStreams(const AVInputFormat*, AVDictionary**, const ffmpeg::DecodePar& p);
     void            setStreamTiming(int32_t i, ffmpeg::streamType t);
-    void            initStreamInfo();
-    void            parseSeeking();
+    void            initStreamInfo() const;
+    void            parseSeeking() const;
     virtual void    parseVideoCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     virtual void    parseAudioCodecPar(int32_t i, AVCodecParameters* p, const AVCodec*);
     void            singleThreadDecodeLoop();
     int             decodeVideoPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t sendPacket(AVPacket* packet, AVCodecContext* codecContext);
     virtual int32_t checkReceiveFrame(AVCodecContext* codecContext);
-    int32_t         parseReceivedFrame(AVCodecContext* codecContext);
+    int32_t         parseReceivedFrame(const AVCodecContext* codecContext);
     void            incrementWritePos();
     virtual void    transferFromHwToCpu();
-    int32_t         convertFrameToCpuFormat(AVCodecContext* codecContext);
+    int32_t         convertFrameToCpuFormat(const AVCodecContext* codecContext);
     int             decodeAudioPacket(AVPacket* packet, AVCodecContext* codecContext);
-    void            onEndOfFile(ffmpeg::streamType t);
+    void            onEndOfFile(ffmpeg::streamType t) const;
 
     ffmpeg::DecodePar           m_par;
     ffmpeg::CustomIOContext     m_ioCtx;
