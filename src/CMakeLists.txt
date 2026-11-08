@@ -48,26 +48,14 @@ if (NOT ARA_VIDEO_SKIP_THIRD_PARTY_DOWNLOAD)
 	endif()
 
 	foreach(DIR IN LISTS REQUIRED_THIRD_PARTY_DIRS)
-		if (NOT EXISTS "${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz")
-			message(STATUS "\t downloading ${DIR}")
-
-			file(DOWNLOAD
-					ftp://ara_ftp:JcjUIUYcr74x@zeitkunst.eu/${DIR}.tar.gz
-					"${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz"
-					SHOW_PROGRESS
-			)
-
-			message(STATUS ${error})
-
-			if(NOT EXISTS "${ARA_AV_SOURCE_DIR}/third_party/${DIR}")
-				message(STATUS "extracting ${DIR}.tar.gz")
-				execute_process(
-						COMMAND tar -xvf ${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz
-						WORKING_DIRECTORY ${ARA_AV_SOURCE_DIR}/third_party/
-						RESULT_VARIABLE result
-				)
-			endif()
-		endif ()
+        if(NOT EXISTS "${ARA_AV_SOURCE_DIR}/third_party/${DIR}")
+            message(STATUS "extracting ${DIR}.tar.gz")
+            execute_process(
+                    COMMAND tar -xvf ${ARA_AV_SOURCE_DIR}/third_party/__checkout/${DIR}.tar.gz
+                    WORKING_DIRECTORY ${ARA_AV_SOURCE_DIR}/third_party/
+                    RESULT_VARIABLE result
+            )
+        endif()
 	endforeach()
 	endif ()
 

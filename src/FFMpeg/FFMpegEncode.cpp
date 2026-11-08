@@ -25,8 +25,8 @@ bool FFMpegEncode::init(const EncodePar &par) {
     m_par = par;
     if (m_par.fromDecoder) {
         m_par.fps = static_cast<int32_t>(m_par.fromDecoder->getFps(streamType::video));
-        m_par.width = static_cast<int32_t>(m_par.fromDecoder->getPar().destWidth);
-        m_par.height = static_cast<int32_t>(m_par.fromDecoder->getPar().destHeight);
+        m_par.width = m_par.fromDecoder->getPar().destWidth;
+        m_par.height = m_par.fromDecoder->getPar().destHeight;
     }
     m_frameDur = 1000.0 / m_par.fps; // in ms
 
@@ -61,9 +61,9 @@ bool FFMpegEncode::record(double time) {
     }
 
     m_fileType = std::filesystem::path(m_par.filePath).extension().string();
-    AVDictionary *avioOpts = nullptr;
 
     try {
+        AVDictionary *avioOpts = nullptr;
         checkRtmpRequested(avioOpts);
         LOG << "FFMpegEncode recording to " << m_par.filePath;
         if (m_par.useHwAccel) {
@@ -819,8 +819,7 @@ void FFMpegEncode::openVideo(OutputStream *ost, AVDictionary *opt_arg) {
     }
 
     // copy the stream parameters to the muxer
-    ret = avcodec_parameters_from_context(ost->st->codecpar, ost->enc);
-    if (ret < 0) {
+    if ((ret = avcodec_parameters_from_context(ost->st->codecpar, ost->enc)) < 0) {
         throw runtime_error("Could not copy the stream parameters");
     }
 
