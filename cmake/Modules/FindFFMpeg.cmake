@@ -108,6 +108,27 @@ macro(find_component _component _pkgconfig _library _header)
 
 endmacro()
 
+set(SKIP_LIBPOSTPROC OFF)
+
+if(UNIX AND NOT APPLE)
+  if(EXISTS "/etc/os-release")
+    file(READ "/etc/os-release" OS_RELEASE_CONTENT)
+    # Check if the distribution is Ubuntu
+    if(OS_RELEASE_CONTENT MATCHES "ID=ubuntu")
+      # Extract VERSION_ID (e.g., "26.04")
+      string(REGEX MATCH "VERSION_ID=\"([0-9]+\\.[0-9]+)\"" _ ${OS_RELEASE_CONTENT})
+      set(UBUNTU_VERSION "${CMAKE_MATCH_1}")
+
+      if(UBUNTU_VERSION VERSION_GREATER_EQUAL "26.04")
+        message(STATUS "Detected Ubuntu ${UBUNTU_VERSION} (>= 26.04): disabling libpostproc")
+        # Set your flags or variables here
+        set(SKIP_LIBPOSTPROC ON)
+      endif()
+    endif()
+  endif()
+endif()
+
+
 # Check for cached results. If there are skip the costly part.
 if (NOT FFMPEG_LIBRARIES)
 
@@ -118,8 +139,11 @@ if (NOT FFMPEG_LIBRARIES)
   find_component(AVUTIL     libavutil     avutil   libavutil/avutil.h)
   find_component(AVFILTER   libavfilter   avfilter libavfilter/avfilter.h)
   find_component(SWSCALE    libswscale    swscale  libswscale/swscale.h)
-  find_component(POSTPROC   libpostproc   postproc libpostproc/postprocess.h)
   find_component(SWRESAMPLE libswresample swresample libswresample/swresample.h)
+
+  if (NOT ${SKIP_LIBPOSTPROC})
+    find_component(POSTPROC   libpostproc   postproc libpostproc/postprocess.h)
+  endif()
 
   # Check if the required components were found and add their stuff to the FFMPEG_* vars.
   set(FFMPEG_ALL_COMP_FOUND TRUE)
@@ -172,8 +196,13 @@ else()
 
 endif ()
 
+set(FFMPEG_COMPONENT_LIST AVCODEC AVDEVICE AVFILTER AVFORMAT AVUTIL SWSCALE)
+if (NOT ${SKIP_LIBPOSTPROC})
+  list(_component APPEND POSTPROC)
+endif()
+
 # Now set the noncached _FOUND vars for the components.
-foreach (_component AVCODEC AVDEVICE AVFILTER AVFORMAT AVUTIL POSTPROC SWSCALE)
+foreach (_component ${FFMPEG_COMPONENT_LIST})
   set_component_found(${_component})
 endforeach ()
 
