@@ -174,7 +174,7 @@ int Portaudio::getValidOutSampleRate(int destSampleRate) {
         fmtDiff[std::abs(it - destSampleRate)] = it;
     }
 
-    return !fmtDiff.empty() ? (int)fmtDiff.begin()->second : 0;
+    return !fmtDiff.empty() ? static_cast<int>(fmtDiff.begin()->second) : 0;
 }
 
 /* This routine will be called by the PortAudio engine when audio is needed.
@@ -197,10 +197,10 @@ int Portaudio::paCallback(const void *inputBuffer, void *outputBuffer,
         && !ctx->m_cycleBuffer.empty()
         && ctx->getCycleBuffer().getFillAmt() != 0) {
         auto& readBuf = ctx->getCycleBuffer().getReadBuff();
-        memcpy(out, readBuf.data(), sizeof(float) * framesPerBuffer * static_cast<int32_t>(ctx->getNrOutChannels()));
+        memcpy(out, readBuf.data(), sizeof(float) * framesPerBuffer * ctx->getNrOutChannels());
         ctx->getCycleBuffer().consumeCountUp();
     } else {
-        memset(out, 0, framesPerBuffer * sizeof(float) * static_cast<int32_t>(ctx->getNrOutChannels()));
+        memset(out, 0, framesPerBuffer * sizeof(float) * ctx->getNrOutChannels());
     }
 
     if (ctx->getStreamProcCb()) {

@@ -51,6 +51,7 @@ void FFMpegPlayer::allocateResources(const ffmpeg::DecodePar& p) {
 
 void FFMpegPlayer::allocGlRes(AVPixelFormat srcPixFmt) {
     initShader(srcPixFmt, m_par);
+
     m_nrTexBuffers = !m_par.decodeYuv420OnGpu ? 1 : (srcPixFmt == AV_PIX_FMT_NV12 || srcPixFmt == AV_PIX_FMT_NV21) ? 2 : 3;
     m_textures = vector<Texture>(m_nrTexBuffers);
 

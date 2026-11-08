@@ -13,10 +13,14 @@ void PortaudioAudioEngine::start() {
     Portaudio::start();
     m_state = paState::Preparing;
     m_paStartTime = chrono::system_clock::now();
+    startProcQueue();
+}
+
+void PortaudioAudioEngine::startProcQueue() {
     m_procQueueThread = std::thread([this] {
         while (toType(m_state) >= toType(paState::Preparing)) {
             {
-                unique_lock<mutex> l(m_cbQueueMtx);
+                unique_lock l(m_cbQueueMtx);
                 for (auto&it : m_audioCbQueue) {
                     it();
                 }
@@ -24,8 +28,37 @@ void PortaudioAudioEngine::start() {
             }
             procSampleQueue();
         }
+        m_queueLoopExit.notify();
     });
     m_procQueueThread.detach();
+}
+
+void PortaudioAudioEngine::pause() {
+    m_state = paState::Paused;
+    m_cycleBuffer.forceSkipFillWait();
+    m_queueLoopExit.wait();
+    Portaudio::pause();
+    int filled = m_cycleBuffer.getFillAmt();
+    for (int i=0; i<filled; i++) {
+        m_cycleBuffer.consumeCountUp();
+    }
+}
+
+void PortaudioAudioEngine::resume() {
+    Portaudio::resume();
+    m_state = paState::Preparing;
+    startProcQueue();
+}
+
+void PortaudioAudioEngine::stop() {
+    m_state = paState::Stopped;
+    m_cycleBuffer.forceSkipFillWait();
+    m_queueLoopExit.wait();
+    Portaudio::stop();
+    for (auto &it : m_audioFiles) {
+        stopAudioFile(it);
+    }
+    m_cycleBuffer.clear();
 }
 
 PaAudioFile& PortaudioAudioEngine::loadAudioAsset(const filesystem::path& p) {
@@ -79,12 +112,14 @@ void PortaudioAudioEngine::procSampleQueue() {
     bool countUp = false;
 
     {
-        unique_lock<mutex> l(m_queueMtx);
+        unique_lock l(m_queueMtx);
         erase_if(m_samplePlayQueue, [](auto af) { return af->reachedEnd(); });
         ranges::fill(m_cycleBuffer.getWriteBuff(), 0.f);
 
         for (auto af : m_samplePlayQueue) {
-            if (af->usingCycleBuf() || (af->getBuffer() && (af->getPlayPos() < af->getBuffer()->size() || af->isLooping()))) {
+            if (af->usingCycleBuf()
+                || (af->getBuffer()
+                    && (af->getPlayPos() < af->getBuffer()->size() || af->isLooping()))) {
                 addAudioFileAtPos(*af);
                 countUp = true;
             }
